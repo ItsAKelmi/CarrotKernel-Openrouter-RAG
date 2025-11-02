@@ -178,17 +178,17 @@ const tutorials = {
 
 // Tutorial launcher methods
 export function openSystemTutorial() {
-    console.log('🎓 openSystemTutorial called');
+    CarrotDebug.ui('🎓 openSystemTutorial called');
     startTutorial('basic-setup');
 }
 
 export function openRepositoryTutorial() {
-    console.log('🎓 openRepositoryTutorial called');
+    CarrotDebug.ui('🎓 openRepositoryTutorial called');
     startTutorial('repository-management');
 }
 
 export function openInjectionTutorial() {
-    console.log('🎓 openInjectionTutorial called');
+    CarrotDebug.ui('🎓 openInjectionTutorial called');
     startTutorial('injection-system');
 }
 
@@ -198,7 +198,7 @@ export function openTemplateEditorTutorial() {
 
 // Start a tutorial by ID - using confirm() dialogs
 export async function startTutorial(tutorialId) {
-    console.log(`🎓 startTutorial called with ID: ${tutorialId}`);
+    CarrotDebug.ui(`🎓 startTutorial called with ID: ${tutorialId}`);
     const tutorial = tutorials[tutorialId];
     if (!tutorial) {
         alert(`Tutorial "${tutorialId}" not found`);
@@ -271,9 +271,9 @@ export async function startTutorial(tutorialId) {
 
 // Show current tutorial step
 export function showTutorialStep() {
-    console.log(`🎓 showTutorialStep called, currentStep: ${currentStep}`);
+    CarrotDebug.ui(`🎓 showTutorialStep called, currentStep: ${currentStep}`);
     if (!tutorialSteps || tutorialSteps.length === 0) {
-        console.warn('⚠️ No tutorial steps, closing');
+        CarrotDebug.error('⚠️ No tutorial steps, closing');
         closeTutorial();
         return;
     }
@@ -281,11 +281,11 @@ export function showTutorialStep() {
     const step = tutorialSteps[currentStep];
     const tutorial = tutorials[currentTutorial];
 
-    console.log(`🎓 Looking for target element: ${step.target}`);
+    CarrotDebug.ui(`🎓 Looking for target element: ${step.target}`);
     // Find target element
     const targetElement = document.querySelector(step.target);
     if (!targetElement) {
-        console.warn(`⚠️ Tutorial target not found: ${step.target}, skipping step`);
+        CarrotDebug.error(`⚠️ Tutorial target not found: ${step.target}, skipping step`);
         CarrotDebug.ui(`⚠️ Tutorial target not found: ${step.target}, skipping step`);
         // Try next step
         if (currentStep < tutorialSteps.length - 1) {
@@ -297,7 +297,7 @@ export function showTutorialStep() {
         return;
     }
 
-    console.log(`✅ Found target element, showing tutorial overlay`);
+    CarrotDebug.ui(`✅ Found target element, showing tutorial overlay`);
     // Highlight the target element
     highlightElement(targetElement, step);
 
@@ -319,10 +319,10 @@ function highlightElement(element, step) {
 
 // Show tutorial overlay
 function showTutorialOverlay(tutorial, step, targetElement) {
-    console.log(`🎓 showTutorialOverlay called`);
+    CarrotDebug.ui(`🎓 showTutorialOverlay called`);
     // Get or create overlay
     let overlay = getTutorialOverlay();
-    console.log(`🎓 Overlay element:`, overlay);
+    CarrotDebug.ui(`🎓 Overlay element:`, overlay);
 
     // Create tutorial popup content
     const totalSteps = tutorialSteps.length;
@@ -357,12 +357,12 @@ function showTutorialOverlay(tutorial, step, targetElement) {
     overlay.innerHTML = popupHTML;
     overlay.style.display = 'flex';
     overlay.classList.add('active'); // Make overlay visible
-    console.log(`🎓 Set overlay display to flex and added active class`);
+    CarrotDebug.ui(`🎓 Set overlay display to flex and added active class`);
 
     // Position popup near target
     const targetRect = targetElement.getBoundingClientRect();
     const popup = document.getElementById('carrot-tutorial-popup');
-    console.log(`🎓 Tutorial popup element:`, popup);
+    CarrotDebug.ui(`🎓 Tutorial popup element:`, popup);
     positionTutorialPopup(popup, targetRect);
 
     // Add resize handler

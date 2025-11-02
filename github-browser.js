@@ -48,7 +48,7 @@ export class CarrotGitHubBrowser {
     saveInstalledPacks() {
         // CRITICAL: Never overwrite extension_settings completely
         if (!extension_settings[extensionName]) {
-            console.warn('⚠️ PACK MANAGER: extension_settings not initialized - this should not happen');
+            CarrotDebug.error('⚠️ PACK MANAGER: extension_settings not initialized - this should not happen');
             extension_settings[extensionName] = {};
         }
         extension_settings[extensionName].installedBunnyMoPacks = this.installedPacks;

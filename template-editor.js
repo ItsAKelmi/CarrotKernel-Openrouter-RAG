@@ -380,7 +380,7 @@ export class CarrotTemplatePromptEditInterface {
                     priorityMacros.push(macro);
                 });
             } else {
-                console.warn('CarrotTemplateManager.macroProcessors not available, using fallback list');
+                CarrotDebug.error('CarrotTemplateManager.macroProcessors not available, using fallback list');
                 // Fallback list of known macros
                 priorityMacros.push(
                     'TRIGGERED_CHARACTER_TAGS', 'CHARACTER_LIST', 'CHARACTERS_WITH_TYPES', 'CHARACTERS',
@@ -907,7 +907,7 @@ Most common categories:<br/>
             
             // Debug log
             if (window.CarrotKernel?.debug) {
-                console.log(`🥕 Macro ${macro.name} setting ${settingName} = ${value}`);
+                CarrotDebug.ui(`🥕 Macro ${macro.name} setting ${settingName} = ${value}`);
             }
         });
         

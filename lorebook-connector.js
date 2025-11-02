@@ -8,6 +8,7 @@ import { world_info, world_names, selected_world_info } from '../../../world-inf
 import { saveMetadataDebounced, extension_settings } from '../../../extensions.js';
 import { getCharaFilename } from '../../../utils.js';
 import { characterRepoBooks, tagLibraries, EXTENSION_NAME } from './carrot-state.js';
+import { wrapLorebookEntries, unwrapLorebookEntries } from './index.js';
 
 // =============================================================================
 // STATE
@@ -311,8 +312,16 @@ function loadCurrentConnections() {
     const charEntry = charLore.find(entry => entry.name === charFilename);
     if (charEntry && Array.isArray(charEntry.extraBooks)) {
         charEntry.extraBooks.forEach(bookName => {
+            // Skip if already loaded as primary
             if (bookName !== primaryBook) {
                 currentConnections[bookName] = { scope: 'character', isPrimary: false };
+            }
+            // Edge case: if this book is in extraBooks but wasn't loaded as primary,
+            // and there's no primary set, consider making it primary
+            // (handles corrupted data where primary is missing)
+            if (!primaryBook && !currentConnections[bookName]) {
+                currentConnections[bookName] = { scope: 'character', isPrimary: true };
+                CarrotDebug.error(`⚠️ No primary lorebook found, auto-setting ${bookName} as primary`);
             }
         });
     }
@@ -323,7 +332,7 @@ function loadCurrentConnections() {
         currentConnections[bookName] = { scope: 'chat', isPrimary: false };
     });
 
-    console.log('🐰 Loaded connections:', currentConnections);
+    CarrotDebug.ui('🐰 Loaded connections:', currentConnections);
 }
 
 // =============================================================================
@@ -412,11 +421,13 @@ function renderLorebookItem(lorebookName, isConnected) {
     }
 
     const connection = currentConnections[lorebookName] || { scope: 'none', isPrimary: false };
-    const isStarred = connection.isPrimary;
+    const isPrimary = connection.isPrimary;
     const scope = connection.scope;
 
-    // Star ONLY shows when connected to character scope
+    // Star shows when connected to character scope
+    // Filled star (⭐) for primary, outlined star (☆) for non-primary
     const showStar = (scope === 'character');
+    const starIcon = isPrimary ? '⭐' : '☆';
     const isCharacterScoped = (scope === 'character');
 
     // Better badge styling matching the reference image
@@ -457,8 +468,8 @@ function renderLorebookItem(lorebookName, isConnected) {
                     transition: all 0.2s ease;
                     user-select: none;
                     filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));"
-                    title="⭐ Connected to character${isStarred ? ' (Primary - exported with PNG)' : ''}&#10;Click to disconnect from character">
-                    ⭐
+                    title="${isPrimary ? '⭐ PRIMARY - Exported with character PNG' : '☆ Connected to character (non-primary)'}&#10;Click to ${isPrimary ? 'demote to non-primary' : 'set as primary'}">
+                    ${starIcon}
                 </div>
             ` : '<div style="width: 28px;"></div>'}
 
@@ -524,25 +535,40 @@ function handleStarClick(e) {
     e.stopPropagation();
     const lorebookName = $(e.target).data('lorebook');
 
-    // Toggle character connection
+    // Star click should toggle PRIMARY status, not connection
     if (!currentConnections[lorebookName]) {
-        // Not connected at all - connect to character
-        currentConnections[lorebookName] = { scope: 'character', isPrimary: false };
+        // Not connected at all - connect to character as primary
+        // First clear any other primaries
+        Object.keys(currentConnections).forEach(book => {
+            if (currentConnections[book].isPrimary) {
+                currentConnections[book].isPrimary = false;
+            }
+        });
+        currentConnections[lorebookName] = { scope: 'character', isPrimary: true };
     } else if (currentConnections[lorebookName].scope === 'character') {
-        // Already character-scoped - remove connection
-        delete currentConnections[lorebookName];
-    } else {
-        // Connected to chat - switch to character
-        currentConnections[lorebookName].scope = 'character';
-    }
-
-    // Auto-assign primary if this is a char repo and no primary exists
-    const isCharRepo = characterRepoBooks.has(lorebookName);
-    if (isCharRepo && currentConnections[lorebookName]?.scope === 'character') {
-        const hasPrimary = Object.values(currentConnections).some(conn => conn.isPrimary);
-        if (!hasPrimary) {
+        // Already character-scoped - toggle primary status
+        if (currentConnections[lorebookName].isPrimary) {
+            // Currently primary - demote to non-primary (but keep character connection)
+            currentConnections[lorebookName].isPrimary = false;
+        } else {
+            // Not primary - make it primary (and clear other primaries)
+            Object.keys(currentConnections).forEach(book => {
+                if (currentConnections[book].isPrimary) {
+                    currentConnections[book].isPrimary = false;
+                }
+            });
             currentConnections[lorebookName].isPrimary = true;
         }
+    } else {
+        // Connected to chat - switch to character and make primary
+        // First clear any other primaries
+        Object.keys(currentConnections).forEach(book => {
+            if (currentConnections[book].isPrimary) {
+                currentConnections[book].isPrimary = false;
+            }
+        });
+        currentConnections[lorebookName].scope = 'character';
+        currentConnections[lorebookName].isPrimary = true;
     }
 
     renderLorebookList($('#carrot-connection-search').val());
@@ -569,7 +595,7 @@ function handleScopeChange(e) {
     renderLorebookList($('#carrot-connection-search').val());
 }
 
-function handleBadgeClick(e) {
+async function handleBadgeClick(e) {
     e.stopPropagation();
     const lorebookName = $(e.currentTarget).data('lorebook');
     const currentType = $(e.currentTarget).data('type');
@@ -581,6 +607,9 @@ function handleBadgeClick(e) {
     const nextType = typeOrder[nextIndex];
 
     // Update the global sets
+    const wasRepo = characterRepoBooks.has(lorebookName);
+    const wasTagLib = tagLibraries.has(lorebookName);
+
     characterRepoBooks.delete(lorebookName);
     tagLibraries.delete(lorebookName);
 
@@ -596,7 +625,22 @@ function handleBadgeClick(e) {
     extension_settings[EXTENSION_NAME].tagLibraries = Array.from(tagLibraries);
     saveSettingsDebounced();
 
-    console.log(`🐰 Cycled ${lorebookName}: ${currentType} → ${nextType}`);
+    // Wrap/unwrap entries if bunnymoTagWrapping is enabled
+    const settings = extension_settings[EXTENSION_NAME];
+    if (settings.bunnymoTagWrapping) {
+        if (nextType === 'taglib' && !wasTagLib) {
+            // Switching TO tag library - wrap entries
+            await wrapLorebookEntries(lorebookName);
+        } else if (nextType === 'repo' && wasTagLib) {
+            // Switching FROM tag library to repo - unwrap entries
+            await unwrapLorebookEntries(lorebookName);
+        } else if (nextType === 'lorebook' && wasTagLib) {
+            // Switching FROM tag library to regular lorebook - unwrap entries
+            await unwrapLorebookEntries(lorebookName);
+        }
+    }
+
+    CarrotDebug.ui(`🐰 Cycled ${lorebookName}: ${currentType} → ${nextType}`);
     renderLorebookList($('#carrot-connection-search').val());
 }
 
@@ -607,7 +651,18 @@ async function applyConnections() {
         return;
     }
 
-    console.log('🐰 Applying connections:', currentConnections);
+    CarrotDebug.ui('🐰 Applying connections:', currentConnections);
+
+    // VALIDATION: Ensure only ONE lorebook has isPrimary: true
+    const primaries = Object.keys(currentConnections).filter(book => currentConnections[book].isPrimary);
+    if (primaries.length > 1) {
+        CarrotDebug.error(`⚠️ Multiple primary lorebooks detected: ${primaries.join(', ')}`);
+        CarrotDebug.error(`⚠️ Only keeping the first one: ${primaries[0]}`);
+        // Clear isPrimary from all but the first
+        primaries.slice(1).forEach(book => {
+            currentConnections[book].isPrimary = false;
+        });
+    }
 
     // Separate by scope and primary status
     let primaryLorebook = null;
@@ -656,7 +711,7 @@ async function applyConnections() {
     chat_metadata.carrot_chat_books = chatScopedBooks;
     await saveMetadataDebounced();
 
-    console.log('🐰 Connections saved!', {
+    CarrotDebug.ui('🐰 Connections saved!', {
         primary: primaryLorebook,
         characterScoped: characterScopedBooks,
         chatScoped: chatScopedBooks
@@ -669,4 +724,4 @@ async function applyConnections() {
     // This will be handled by the CHAT_CHANGED handler in index.js
 }
 
-console.log('🐰 Lorebook Connector loaded');
+// Module loading is silent - no logs needed in production

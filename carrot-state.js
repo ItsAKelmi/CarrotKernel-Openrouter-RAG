@@ -357,4 +357,4 @@ export const EXTENSION_NAME = 'CarrotKernel';
 // INITIALIZATION
 // =============================================================================
 
-console.log('🥕 CarrotKernel: State module loaded');
+// Module loading is silent - no logs needed in production

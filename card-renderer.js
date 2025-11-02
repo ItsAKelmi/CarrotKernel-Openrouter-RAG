@@ -316,7 +316,7 @@ function loadCarrotCardStyles() {
 }
 function attachExternalCardsToMessage(messageIndex, characterData) {
     if (extension_settings[extensionName]?.debugMode) {
-        console.log('🔧 CARDS EMERGENCY DEBUG: Function called', { messageIndex, characterData });
+        CarrotDebug.ui('🔧 CARDS EMERGENCY DEBUG: Function called', { messageIndex, characterData });
     }
     
     CarrotDebug.ui('🔧 CARDS DEBUG: Starting card attachment', { 
@@ -813,10 +813,10 @@ function createExternalCardContainer(characterData, messageIndex) {
     
     // Process characters and organize by tabs - show first character initially
     if (extension_settings[extensionName]?.debugMode) {
-        console.log(`[BMT CARDS] Creating tabbed interface for ${characters.length} characters`);
+        CarrotDebug.ui(`[BMT CARDS] Creating tabbed interface for ${characters.length} characters`);
     }
     if (extension_settings[extensionName]?.debugMode) {
-        console.log(`[BMT CARDS] First character data:`, characters[0]);
+        CarrotDebug.ui(`[BMT CARDS] First character data:`, characters[0]);
     }
     
     if (characters.length > 0) {
@@ -834,7 +834,7 @@ function createExternalCardContainer(characterData, messageIndex) {
                     tags: charResult.data.tags instanceof Map ? Object.fromEntries(charResult.data.tags) : charResult.data.tags
                 };
             } else {
-                console.error(`[BMT CARDS] No data found for character: ${firstChar}`);
+                CarrotDebug.error(`[BMT CARDS] No data found for character: ${firstChar}`);
                 return;
             }
         } else {
@@ -846,7 +846,7 @@ function createExternalCardContainer(characterData, messageIndex) {
         }
         
         if (extension_settings[extensionName]?.debugMode) {
-            console.log(`[BMT CARDS] Formatted character:`, formattedChar);
+            CarrotDebug.ui(`[BMT CARDS] Formatted character:`, formattedChar);
         }
         refreshTabContent(formattedChar, tabContents);
     }
@@ -971,7 +971,7 @@ function createTabbedCharacterCard(character, index, tabType) {
 // The real functions are 2000+ lines of complex theming and categorization code.
 // For now using a simplified version that works - will need to copy the full functions properly later.
 function createTabSpecificContent(tags, tabType) {
-    console.log('🔍 DEBUG createTabSpecificContent called with:', { tags, tabType });
+    CarrotDebug.ui('🔍 DEBUG createTabSpecificContent called with:', { tags, tabType });
     
     const container = document.createElement('div');
     container.style.cssText = `padding: 20px 24px;`;
@@ -1120,15 +1120,15 @@ function createTabSpecificContent(tags, tabType) {
     }
     
     // Simple, direct tag categorization
-    console.log('🔍 DEBUG: Processing tags for categorization:', tags);
-    console.log('🔍 DEBUG: Available tag categories:', Object.keys(tags));
+    CarrotDebug.ui('🔍 DEBUG: Processing tags for categorization:', tags);
+    CarrotDebug.ui('🔍 DEBUG: Available tag categories:', Object.keys(tags));
     
     Object.entries(tags).forEach(([tagCategory, tagList]) => {
-        console.log(`🔍 DEBUG: Processing category "${tagCategory}" with tags:`, tagList);
-        console.log('🚨 CARROT KERNEL UPDATE TEST - NEW CODE IS RUNNING! 🚨');
+        CarrotDebug.ui(`🔍 DEBUG: Processing category "${tagCategory}" with tags:`, tagList);
+        CarrotDebug.ui('🚨 CARROT KERNEL UPDATE TEST - NEW CODE IS RUNNING! 🚨');
         
         if (!Array.isArray(tagList)) {
-            console.log(`🔍 DEBUG: Skipping non-array category: ${tagCategory}`, tagList);
+            CarrotDebug.ui(`🔍 DEBUG: Skipping non-array category: ${tagCategory}`, tagList);
             return;
         }
         
@@ -1142,7 +1142,7 @@ function createTabSpecificContent(tags, tabType) {
             else if (/^(E|I)(N|S)(T|F)(J|P)(-[AU])?$/i.test(tag)) {
                 category = 'MBTI Types';
                 if (extension_settings[extensionName]?.debugMode) {
-                    console.log(`[BMT CARDS] MBTI MATCH: "${tag}" -> "${category}"`);
+                    CarrotDebug.ui(`[BMT CARDS] MBTI MATCH: "${tag}" -> "${category}"`);
                 }
             }
             else if (tagCategory.toLowerCase() === 'trait') {
@@ -1231,11 +1231,11 @@ function createTabSpecificContent(tags, tabType) {
                 const displayTag = `${tagCategory.toUpperCase()}: ${tag}`;
                 organizedTags[category].push(displayTag);
                 if (extension_settings[extensionName]?.debugMode) {
-                    console.log(`[BMT CARDS] Added "${displayTag}" to "${category}"`);
+                    CarrotDebug.ui(`[BMT CARDS] Added "${displayTag}" to "${category}"`);
                 }
             } else {
                 if (extension_settings[extensionName]?.debugMode) {
-                    console.log(`[BMT CARDS] SKIPPING "${tag}" - category "${category}" not available for ${tabType} tab and no Other section`);
+                    CarrotDebug.ui(`[BMT CARDS] SKIPPING "${tag}" - category "${category}" not available for ${tabType} tab and no Other section`);
                 }
             }
         });
@@ -1243,7 +1243,7 @@ function createTabSpecificContent(tags, tabType) {
     
     // DEBUG: Log final organization
     if (extension_settings[extensionName]?.debugMode) {
-        console.log(`[BMT CARDS] Final organized tags for ${tabType}:`, organizedTags);
+        CarrotDebug.ui(`[BMT CARDS] Final organized tags for ${tabType}:`, organizedTags);
     }
     
     // Create sections for each category that has tags
@@ -1251,7 +1251,7 @@ function createTabSpecificContent(tags, tabType) {
         if (categoryTags.length === 0) return;
         
         if (extension_settings[extensionName]?.debugMode) {
-            console.log(`[BMT CARDS] Creating section for category: ${categoryName} with ${categoryTags.length} tags:`, categoryTags);
+            CarrotDebug.ui(`[BMT CARDS] Creating section for category: ${categoryName} with ${categoryTags.length} tags:`, categoryTags);
         }
         
         // Simple category info mapping
@@ -1511,7 +1511,7 @@ function createTagSection(categoryName, tags, tabType, isCollapsible = false, ca
     
     // DEBUG: Log theme selection
     if (extension_settings[extensionName]?.debugMode) {
-        console.log(`[BMT CARDS] Selected theme for category "${categoryName}":`, theme);
+        CarrotDebug.ui(`[BMT CARDS] Selected theme for category "${categoryName}":`, theme);
     }
     
     const section = document.createElement('div');
@@ -1949,7 +1949,7 @@ function searchWorldBook(tag) {
         if (typeof window.world_info_character_cards !== 'undefined') {
             // Search through world info entries
             if (extension_settings[extensionName]?.debugMode) {
-                console.log(`[BMT SYSTEM] Searching WorldBook for tag: ${tag}`);
+                CarrotDebug.ui(`[BMT SYSTEM] Searching WorldBook for tag: ${tag}`);
             }
             
             // Create a temporary search popup
@@ -1998,7 +1998,7 @@ function searchWorldBook(tag) {
         } else {
             // Fallback notification
             if (extension_settings[extensionName]?.debugMode) {
-                console.log(`[BMT SYSTEM] WorldBook search not available for tag: ${tag}`);
+                CarrotDebug.ui(`[BMT SYSTEM] WorldBook search not available for tag: ${tag}`);
             }
             
             const notification = document.createElement('div');
@@ -2025,7 +2025,7 @@ function searchWorldBook(tag) {
             }, 2000);
         }
     } catch (error) {
-        console.error('[BunnyMoTags] Error searching WorldBook:', error);
+        CarrotDebug.error('[BunnyMoTags] Error searching WorldBook:', error);
     }
 }
 function createCharacterCard(character, index) {

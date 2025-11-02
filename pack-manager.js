@@ -184,19 +184,19 @@ export class CarrotPackManager {
 
     // Test rate limiting system (for debugging)
     async testRateLimiting() {
-        console.log('🧪 Testing rate limiting system...');
+        CarrotDebug.repo('🧪 Testing rate limiting system...');
 
         const testUrl = `https://api.github.com/repos/${this.githubRepo}/contents`;
         const startTime = Date.now();
 
         try {
-            console.log('📊 Current rate limit info:', this.rateLimitInfo);
-            console.log('🔄 Making test request with rate limiting...');
+            CarrotDebug.repo('📊 Current rate limit info:', this.rateLimitInfo);
+            CarrotDebug.repo('🔄 Making test request with rate limiting...');
 
             const response = await this.fetchWithRateLimit(testUrl);
             const endTime = Date.now();
 
-            console.log('✅ Rate-limited request completed:', {
+            CarrotDebug.repo('✅ Rate-limited request completed:', {
                 status: response.status,
                 ok: response.ok,
                 duration: `${endTime - startTime}ms`,
@@ -215,7 +215,7 @@ export class CarrotPackManager {
             };
 
         } catch (error) {
-            console.error('❌ Rate limiting test failed:', error);
+            CarrotDebug.error('❌ Rate limiting test failed:', error);
             return {
                 success: false,
                 error: error.message,
@@ -443,7 +443,7 @@ export class CarrotPackManager {
             // Track installation
             // CRITICAL: Never overwrite extension_settings completely
             if (!extension_settings[extensionName]) {
-                console.warn('⚠️ PACK MANAGER: extension_settings not initialized - this should not happen');
+                CarrotDebug.error('⚠️ PACK MANAGER: extension_settings not initialized - this should not happen');
                 extension_settings[extensionName] = {};
             }
             if (!extension_settings[extensionName].installedPacks) extension_settings[extensionName].installedPacks = {};
@@ -464,7 +464,17 @@ export class CarrotPackManager {
             if (typeof loadWorldInfoList === 'function') {
                 loadWorldInfoList();
             }
-            
+
+            // Auto-scan newly installed pack for characters
+            if (typeof window.CarrotKernel?.scanSelectedLorebooks === 'function') {
+                try {
+                    await window.CarrotKernel.scanSelectedLorebooks([filename]);
+                    CarrotDebug.repo(`✅ Auto-scanned newly installed pack: ${filename}`);
+                } catch (error) {
+                    CarrotDebug.error('Failed to auto-scan installed pack:', error);
+                }
+            }
+
             CarrotDebug.repo(`✅ Pack installed: ${packInfo.displayName}`);
             return true;
             
@@ -476,22 +486,22 @@ export class CarrotPackManager {
 
     // Scan GitHub repository for available packs
     async scanRemotePacks() {
-        console.log('🎯 PACK MANAGER DEBUG: scanRemotePacks() called');
+        CarrotDebug.repo('scanRemotePacks() called');
 
         try {
             CarrotDebug.repo('🔍 Scanning remote packs from GitHub...');
 
             const apiUrl = `https://api.github.com/repos/${this.githubRepo}/contents/${encodeURIComponent(this.packsFolder)}`;
-            console.log('🎯 PACK MANAGER DEBUG: API URL constructed:', {
+            CarrotDebug.repo('API URL constructed:', {
                 apiUrl: apiUrl,
                 githubRepo: this.githubRepo,
                 packsFolder: this.packsFolder
             });
 
-            console.log('🎯 PACK MANAGER DEBUG: Making rate-limited fetch request to GitHub API...');
+            CarrotDebug.repo('Making rate-limited fetch request to GitHub API...');
             const response = await this.fetchWithRateLimit(apiUrl);
 
-            console.log('🎯 PACK MANAGER DEBUG: GitHub API response received:', {
+            CarrotDebug.repo('GitHub API response received:', {
                 status: response.status,
                 statusText: response.statusText,
                 ok: response.ok,
@@ -504,7 +514,7 @@ export class CarrotPackManager {
 
             if (!response.ok) {
                 const errorText = await response.text();
-                console.error('❌ PACK MANAGER ERROR: GitHub API error response:', {
+                CarrotDebug.error('GitHub API error response:', {
                     status: response.status,
                     statusText: response.statusText,
                     responseText: errorText
@@ -512,17 +522,17 @@ export class CarrotPackManager {
                 throw new Error(`GitHub API error: ${response.status} - ${response.statusText}`);
             }
 
-            console.log('🎯 PACK MANAGER DEBUG: Parsing JSON response...');
+            CarrotDebug.repo('Parsing JSON response...');
             const contents = await response.json();
 
-            console.log('🎯 PACK MANAGER DEBUG: GitHub API contents parsed:', {
+            CarrotDebug.repo('GitHub API contents parsed:', {
                 isArray: Array.isArray(contents),
                 length: contents?.length,
                 firstFewItems: contents?.slice(0, 3)
             });
 
             const packs = contents.filter(item => item.type === 'dir');
-            console.log('🎯 PACK MANAGER DEBUG: Directory items filtered:', {
+            CarrotDebug.repo('Directory items filtered:', {
                 totalItems: contents.length,
                 packDirectories: packs.length,
                 packNames: packs.map(p => p.name)
@@ -530,19 +540,19 @@ export class CarrotPackManager {
 
             this.availablePacks.clear();
 
-            console.log('🎯 PACK MANAGER DEBUG: Starting to fetch pack info for each pack...');
+            CarrotDebug.repo('Starting to fetch pack info for each pack...');
             for (const pack of packs) {
-                console.log(`🎯 PACK MANAGER DEBUG: Fetching info for pack: ${pack.name}`);
+                CarrotDebug.repo(`Fetching info for pack: ${pack.name}`);
                 const packInfo = await this.getPackInfo(pack.name);
                 if (packInfo) {
                     this.availablePacks.set(pack.name, packInfo);
-                    console.log(`✅ PACK MANAGER DEBUG: Successfully added pack: ${pack.name}`);
+                    CarrotDebug.repo(`✅ Successfully added pack: ${pack.name}`);
                 } else {
-                    console.warn(`⚠️ PACK MANAGER DEBUG: Failed to get info for pack: ${pack.name}`);
+                    CarrotDebug.repo(`⚠️ Failed to get info for pack: ${pack.name}`);
                 }
             }
 
-            console.log('🎯 PACK MANAGER DEBUG: Pack scanning completed:', {
+            CarrotDebug.repo('Pack scanning completed:', {
                 totalPacksFound: this.availablePacks.size,
                 packNames: Array.from(this.availablePacks.keys())
             });
@@ -551,7 +561,7 @@ export class CarrotPackManager {
             return Array.from(this.availablePacks.values());
 
         } catch (error) {
-            console.error('❌ PACK MANAGER ERROR: scanRemotePacks failed:', {
+            CarrotDebug.error('scanRemotePacks failed:', {
                 errorMessage: error.message,
                 errorStack: error.stack,
                 errorName: error.name,
@@ -565,35 +575,29 @@ export class CarrotPackManager {
 
     // Get detailed info about a specific pack
     async getPackInfo(packName) {
-        if (extension_settings[extensionName]?.debugMode) {
-            console.log(`🎯 PACK MANAGER DEBUG: getPackInfo called for pack: ${packName}`);
-        }
+        CarrotDebug.repo(`getPackInfo called for pack: ${packName}`);
 
         try {
             const apiUrl = `https://api.github.com/repos/${this.githubRepo}/contents/${encodeURIComponent(this.packsFolder)}/${encodeURIComponent(packName)}`;
 
-            if (extension_settings[extensionName]?.debugMode) {
-                console.log(`🎯 PACK MANAGER DEBUG: Pack info API URL: ${apiUrl}`);
-            }
+            CarrotDebug.repo(`Pack info API URL: ${apiUrl}`);
 
             const response = await this.fetchWithRateLimit(apiUrl);
 
-            if (extension_settings[extensionName]?.debugMode) {
-                console.log(`🎯 PACK MANAGER DEBUG: Pack info response for ${packName}:`, {
-                    status: response.status,
-                    statusText: response.statusText,
-                    ok: response.ok,
-                    rateLimitRemaining: response.headers.get('x-ratelimit-remaining')
-                });
-            }
+            CarrotDebug.repo(`Pack info response for ${packName}:`, {
+                status: response.status,
+                statusText: response.statusText,
+                ok: response.ok,
+                rateLimitRemaining: response.headers.get('x-ratelimit-remaining')
+            });
 
             if (!response.ok) {
                 if (response.status === 403) {
-                    console.warn(`⚠️ PACK MANAGER DEBUG: Rate limit hit for pack ${packName}`);
+                    CarrotDebug.repo(`Rate limit hit for pack ${packName}`);
                     CarrotDebug.error(`GitHub API rate limit exceeded for pack: ${packName}`);
                     return null;
                 }
-                console.error(`❌ PACK MANAGER ERROR: API error for pack ${packName}: ${response.status}`);
+                CarrotDebug.error(`API error for pack ${packName}: ${response.status}`);
                 throw new Error(`GitHub API error: ${response.status}`);
             }
             
@@ -672,7 +676,7 @@ export class CarrotPackManager {
             // Track installation in our metadata
             // CRITICAL: Never overwrite extension_settings completely
             if (!extension_settings[extensionName]) {
-                console.warn('⚠️ PACK MANAGER: extension_settings not initialized - this should not happen');
+                CarrotDebug.error('⚠️ PACK MANAGER: extension_settings not initialized - this should not happen');
                 extension_settings[extensionName] = {};
             }
             if (!extension_settings[extensionName].installedPacks) {
@@ -697,7 +701,17 @@ export class CarrotPackManager {
             if (typeof loadWorldInfoList === 'function') {
                 loadWorldInfoList();
             }
-            
+
+            // Auto-scan newly installed pack for characters
+            if (typeof window.CarrotKernel?.scanSelectedLorebooks === 'function') {
+                try {
+                    await window.CarrotKernel.scanSelectedLorebooks([filename]);
+                    CarrotDebug.repo(`✅ Auto-scanned newly installed pack: ${filename}`);
+                } catch (error) {
+                    CarrotDebug.error('Failed to auto-scan installed pack:', error);
+                }
+            }
+
             CarrotDebug.repo(`✅ Pack installed as lorebook: ${filename}`);
             toastr.success(`Pack installed: ${packInfo.displayName}`, `Saved as ${filename}`);
             return true;

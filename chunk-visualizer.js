@@ -147,11 +147,11 @@ export function openChunkVisualizer(collectionId) {
     modifiedChunks = JSON.parse(JSON.stringify(chunks));
     hasUnsavedChanges = false;
 
-    console.log('🔍 Loading chunks for editing:', Object.keys(modifiedChunks).length, 'chunks');
+    CarrotDebug.ui('🔍 Loading chunks for editing:', Object.keys(modifiedChunks).length, 'chunks');
 
     Object.entries(modifiedChunks).forEach(([hash, chunk]) => {
         if (chunk.customWeights && Object.keys(chunk.customWeights).length > 0) {
-            console.log(`📊 Chunk ${hash} has custom weights:`, chunk.customWeights);
+            CarrotDebug.ui(`📊 Chunk ${hash} has custom weights:`, chunk.customWeights);
         }
         initializeChunkKeywordMetadata(chunk);
         chunk._editing = false;
@@ -221,7 +221,7 @@ export async function saveChunkChanges() {
         hasUnsavedChanges = false;
         toastr.success('Chunks saved successfully');
     } catch (error) {
-        console.error('Failed to save chunks:', error);
+        CarrotDebug.error('Failed to save chunks:', error);
         toastr.error('Failed to save chunks: ' + error.message);
     }
 }
@@ -730,7 +730,7 @@ function initializeKeywordSelector(chunk) {
         chunk.customKeywords = selectedKeywords.filter(k => !systemKeywords.includes(k));
         initializeChunkKeywordMetadata(chunk);
         hasUnsavedChanges = true;
-        console.log('Keywords updated:', chunk.customKeywords);
+        CarrotDebug.ui('Keywords updated:', chunk.customKeywords);
     });
 
     $textarea.off('change').on('change', function() {
@@ -813,7 +813,7 @@ function createWeightBadge(keyword, hash, weight) {
             modifiedChunks[hash].customWeights[normalized] = clampedWeight;
             hasUnsavedChanges = true;
             $(this).text(clampedWeight); // Update display without re-rendering
-            console.log(`✅ Weight saved for "${keyword}": ${clampedWeight}`);
+            CarrotDebug.ui(`✅ Weight saved for "${keyword}": ${clampedWeight}`);
         });
 }
 
@@ -913,7 +913,7 @@ function bindChunkVisualizerEvents() {
             renderChunks(modifiedChunks, getSearchTerm());
             toastr.success('Keywords regenerated');
         } catch (error) {
-            console.error('Failed to regenerate keywords:', error);
+            CarrotDebug.error('Failed to regenerate keywords:', error);
             toastr.error('Failed to regenerate keywords');
         } finally {
             $btn.removeClass('fa-spin');

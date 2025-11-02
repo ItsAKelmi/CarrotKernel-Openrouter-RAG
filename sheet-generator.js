@@ -37,17 +37,17 @@ export function initializeSheetGenerator(findCharFn) {
 // SHEET GENERATION FUNCTIONS
 // =============================================================================
 
-function generateFullSheet(characterName, charData) {
+async function generateFullSheet(characterName, charData) {
     const currentTemplate = CarrotTemplateManager.getPrimaryTemplateForCategory('BunnyMo Fullsheet Format');
-    
+
     if (currentTemplate) {
         // Use template system
         const templateData = {
             name: characterName,
             tags: charData.tags
         };
-        
-        return CarrotTemplateManager.processTemplate(currentTemplate.content, templateData);
+
+        return await CarrotTemplateManager.processTemplate(currentTemplate.content, templateData);
     }
     
     // Fallback to default format
@@ -67,17 +67,17 @@ function generateFullSheet(characterName, charData) {
 }
 
 // Generate tag-focused sheet
-function generateTagSheet(characterName, charData) {
+async function generateTagSheet(characterName, charData) {
     const currentTemplate = CarrotTemplateManager.getPrimaryTemplateForCategory('BunnyMo Tagsheet Format');
-    
+
     if (currentTemplate) {
         // Use template system
         const templateData = {
             name: characterName,
             tags: charData.tags
         };
-        
-        return CarrotTemplateManager.processTemplate(currentTemplate.content, templateData);
+
+        return await CarrotTemplateManager.processTemplate(currentTemplate.content, templateData);
     }
     
     // Fallback to BunnymoTags format
@@ -151,17 +151,17 @@ function generateTagSheet(characterName, charData) {
 }
 
 // Generate quick reference sheet
-function generateQuickSheet(characterName, charData) {
+async function generateQuickSheet(characterName, charData) {
     const currentTemplate = CarrotTemplateManager.getPrimaryTemplateForCategory('BunnyMo Quicksheet Format');
-    
+
     if (currentTemplate) {
         // Use template system
         const templateData = {
             name: characterName,
             tags: charData.tags
         };
-        
-        return CarrotTemplateManager.processTemplate(currentTemplate.content, templateData);
+
+        return await CarrotTemplateManager.processTemplate(currentTemplate.content, templateData);
     }
     
     // Fallback to default format
@@ -425,93 +425,77 @@ const CarrotTemplateManager = {
             }
         },
 
-        'evolution_detection': {
-            id: 'evolution_detection',
-            name: 'Evolution Detection Analysis',
-            description: 'LLM prompt for detecting character psychological evolution from chat messages',
-            category: 'Evolution Tracker',
+        'bunnymo_memsheet_injection_default': {
+            id: 'bunnymo_memsheet_injection_default',
+            name: 'Default Memsheet Injection',
+            description: 'System prompt for !memsheet commands',
+            category: 'BunnyMo Memsheet Injection',
             role: 'system',
-            content: `Analyze {{CHAR_NAME}}'s psychological evolution based on their behavior in the conversation.
+            content: `📖 **MANDATORY OOC OVERRIDE** 📖
 
-{{PACK_OPTIONS}}
-{{CURRENT_STATE}}
+**SYSTEM DIRECTIVE:** A !MEMSHEET command has been detected and must be executed immediately.
 
-**CONVERSATION CONTEXT:**
-{{MESSAGES}}
+**INSTRUCTIONS:**
+• **CEASE** all current roleplay and narrative progression
+• **EXECUTE** the !MEMSHEET request - catalogue the specific memory event being referenced
+• **PROVIDE** comprehensive memory cataloguing with temporal data, spatial details, participants, concrete events, relationship dynamics, significance analysis, memory tags, and future reference triggers
+• **DO NOT CONTINUE** the story after completing this memory catalogue
 
-**CRITICAL INSTRUCTIONS:**
-- User messages are provided ONLY for context - DO NOT analyze user behavior
-- ONLY detect psychological changes in {{CHAR_NAME}} (the AI character)
-- Focus exclusively on {{CHAR_NAME}}'s dialogue, actions, and behavior
-- Ignore any changes in the user - we only care about {{CHAR_NAME}}
-
-Respond with a JSON array of evolution changes for {{CHAR_NAME}} in this EXACT format:
-
-[
-  {
-    "pack": "DERE",
-    "from": "TSUNDERE",
-    "to": "DEREDERE",
-    "delta": 3,
-    "reason": "{{CHAR_NAME}} unconsciously used user as pillow, showing trust"
-  },
-  {
-    "pack": "TRAIT",
-    "from": "ANGRY",
-    "to": "EXHAUSTED",
-    "delta": 4,
-    "reason": "{{CHAR_NAME}} completely drained, surrendering to rest"
-  }
-]
-
-**RULES:**
-- ONLY use tags from the pack options lists above
-- ONLY analyze {{CHAR_NAME}}'s behavior, NOT the user's
-- Delta is the progress amount (1-{{GROWTH_RATE}})
-- For GENRE: characters can have MULTIPLE genres - delta adds to existing or starts new
-- If continuing existing evolution, use those FROM/TO states
-- If starting new evolution, choose logical FROM/TO from available options
-- If no evolution detected in {{CHAR_NAME}}, return: []
-- ONLY respond with valid JSON, no other text
-
-RESPOND WITH JSON ONLY:`,
+**PRIORITY:** CRITICAL - This system command takes precedence over all ongoing narrative. Story does NOT resume after memory cataloguing.`,
             variables: {
-                'CHAR_NAME': {
+                'CHARACTER_NAME': {
                     type: 'system',
-                    description: 'Character name being analyzed',
+                    description: 'Character name for the memory entry',
                     enabled: true,
                     format: 'text'
-                },
-                'PACK_OPTIONS': {
-                    type: 'system',
-                    description: 'Available BunnyMo pack tags that can be used',
-                    enabled: true,
-                    format: 'text'
-                },
-                'CURRENT_STATE': {
-                    type: 'system',
-                    description: 'Currently tracked evolution states',
-                    enabled: true,
-                    format: 'text'
-                },
-                'MESSAGES': {
-                    type: 'system',
-                    description: 'Chat messages to analyze',
-                    enabled: true,
-                    format: 'text'
-                },
-                'GROWTH_RATE': {
-                    type: 'system',
-                    description: 'Maximum delta value for progress',
-                    enabled: true,
-                    format: 'number'
                 }
             },
             settings: {
-                inject_depth: 0,
-                inject_position: 'none',
-                auto_activate: false,
-                ephemeral: false
+                inject_depth: 4,
+                inject_position: 'depth',
+                auto_activate: true,
+                ephemeral: true
+            },
+            metadata: {
+                created: Date.now(),
+                modified: Date.now(),
+                usage_count: 0,
+                is_default: true,
+                is_primary: true
+            }
+        },
+
+        'bunnymo_updatesheet_injection_default': {
+            id: 'bunnymo_updatesheet_injection_default',
+            name: 'Default Updatesheet Injection',
+            description: 'System prompt for !updatesheet commands',
+            category: 'BunnyMo Updatesheet Injection',
+            role: 'system',
+            content: `🔄 **MANDATORY OOC OVERRIDE** 🔄
+
+**SYSTEM DIRECTIVE:** A !UPDATESHEET command has been detected and must be executed immediately.
+
+**INSTRUCTIONS:**
+• **CEASE** all current roleplay and narrative progression
+• **EXECUTE** the !UPDATESHEET request for "{{CHARACTER_NAME}}" - perform comprehensive psychological tag evolution assessment
+• **PROVIDE** complete evolution analysis including: assessment scope, change magnitude, psychological analysis by category (Dere, Attachment, MBTI, Traits, NSFW, Boundaries, Genre), overall change assessment with statistics, updated tag block (copy-paste ready), and detailed change log
+• **ANALYZE** all scenes since last update to identify tag strengthening/weakening/converting/emerging/fading
+• **RESUME** normal roleplay only after completing this comprehensive psychological profile update
+
+**PRIORITY:** CRITICAL - This system command takes precedence over all ongoing narrative.`,
+            variables: {
+                'CHARACTER_NAME': {
+                    type: 'system',
+                    description: 'Character name for the update assessment',
+                    enabled: true,
+                    format: 'text'
+                }
+            },
+            settings: {
+                inject_depth: 4,
+                inject_position: 'depth',
+                auto_activate: true,
+                ephemeral: true
             },
             metadata: {
                 created: Date.now(),
@@ -614,7 +598,7 @@ RESPOND WITH JSON ONLY:`,
     setPrimaryTemplate(id) {
         // CRITICAL: Never overwrite extension_settings completely - use optional chaining
         if (!extension_settings[extensionName]) {
-            console.warn('⚠️ TEMPLATES: extension_settings not initialized - this should not happen');
+            CarrotDebug.error('⚠️ TEMPLATES: extension_settings not initialized - this should not happen');
             extension_settings[extensionName] = {};
         }
         extension_settings[extensionName].primaryTemplate = id;
@@ -626,7 +610,7 @@ RESPOND WITH JSON ONLY:`,
     saveTemplate(template) {
         // CRITICAL: Never overwrite extension_settings completely
         if (!extension_settings[extensionName]) {
-            console.warn('⚠️ TEMPLATES: extension_settings not initialized - this should not happen');
+            CarrotDebug.error('⚠️ TEMPLATES: extension_settings not initialized - this should not happen');
             extension_settings[extensionName] = {};
         }
         if (!extension_settings[extensionName].templates) {
@@ -689,7 +673,7 @@ RESPOND WITH JSON ONLY:`,
     updateTemplate(id, updatedTemplate) {
         // CRITICAL: Never overwrite extension_settings completely
         if (!extension_settings[extensionName]) {
-            console.warn('⚠️ TEMPLATES: extension_settings not initialized - this should not happen');
+            CarrotDebug.error('⚠️ TEMPLATES: extension_settings not initialized - this should not happen');
             extension_settings[extensionName] = {};
         }
         if (!extension_settings[extensionName].templates) {
@@ -847,7 +831,7 @@ RESPOND WITH JSON ONLY:`,
         }
 
         if (!findCharacterByName) {
-            console.warn('⚠️ findCharacterByName not initialized - call initializeSheetGenerator first');
+            CarrotDebug.error('⚠️ findCharacterByName not initialized - call initializeSheetGenerator first');
             return [];
         }
 
@@ -1032,7 +1016,7 @@ RESPOND WITH JSON ONLY:`,
                         }
 
                     } catch (error) {
-                        console.error(`[CarrotKernel] Error loading lorebook ${lorebookName}:`, error);
+                        CarrotDebug.error(`[CarrotKernel] Error loading lorebook ${lorebookName}:`, error);
                     }
                 }
 
@@ -1096,7 +1080,7 @@ RESPOND WITH JSON ONLY:`,
                             }
                         }
                     } catch (error) {
-                        console.error(`[CarrotKernel] Error loading lorebook ${lorebookName}:`, error);
+                        CarrotDebug.error(`[CarrotKernel] Error loading lorebook ${lorebookName}:`, error);
                     }
                 }
 

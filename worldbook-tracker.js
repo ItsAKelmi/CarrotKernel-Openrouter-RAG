@@ -122,6 +122,10 @@ carrotStyleSheet.textContent = `
         bottom: 0.125em;
         left: 0.25em;
         font-size: 2em;
+        max-width: 48px;
+        max-height: 48px;
+        width: 2em;
+        height: 2em;
         opacity: 0.25;
         transition: opacity 200ms;
         cursor: pointer;
@@ -140,6 +144,10 @@ carrotStyleSheet.textContent = `
     @media (max-width: 768px) {
         .ck-trigger {
             font-size: 1.5em;
+            max-width: 40px;
+            max-height: 40px;
+            width: 1.5em;
+            height: 1.5em;
             bottom: 60px;
             left: 10px;
             opacity: 0.4;
@@ -966,10 +974,6 @@ carrotStyleSheet.textContent = `
             left: unset;
             top: 1em;
         }
-
-        .ck-trigger {
-            font-size: 1.8em;
-        }
     }
 
     /* 🎨 High-contrast mode support */
@@ -1736,341 +1740,309 @@ const init = () => {
         trigger.style.height = size.height;
     }
 
-    // Drag and drop functionality with optimized performance
-    let isDragging = false;
-    let hasMoved = false;
-    let animFrame = null;
-    let currentX = 0;
-    let currentY = 0;
-    let offsetX, offsetY;
-    let repositionMode = false;
-    let startDragX = 0;
-    let startDragY = 0;
-    const MOVEMENT_THRESHOLD = 10; // Minimum pixels to count as movement
+// - Single state variable instead of multiple flags
+// - No setTimeout timers or suppressNextClick hacks
+// - Cleaner event handling with pointer capture
 
-    // Long-press detection for mobile context menu
-    let longPressTimer = null;
-    let touchStartTime = 0;
-    const LONG_PRESS_DURATION = 500; // ms
+// State variables
+let state = 'idle'; // 'idle' | 'dragging' | 'resizing'
+let repositionMode = false;
+let startX = 0, startY = 0;
+let offsetX = 0, offsetY = 0;
+let hasMoved = false;
+let currentPointerId = null;
 
-    function updatePosition() {
-        if (isDragging) {
-            trigger.style.left = `${currentX}px`;
-            trigger.style.top = `${currentY}px`;
-            animFrame = requestAnimationFrame(updatePosition);
-        }
+// Double-tap detection
+let lastTapTime = 0;
+let lastTapX = 0;
+let lastTapY = 0;
+let singleTapTimer = null;
+const DOUBLE_TAP_DELAY = 300; // ms
+const DOUBLE_TAP_DISTANCE = 30; // px
+const MOVE_THRESHOLD = 10; // px
+
+// Unified click-outside handler
+let documentClickHandler = null;
+
+function setupDocumentClickHandler(panelElement, isConfigPanel = false) {
+    if (documentClickHandler) {
+        document.removeEventListener('pointerdown', documentClickHandler);
     }
 
-    // Helper function to get client coordinates from mouse or touch event
-    function getClientCoords(e) {
-        if (e.touches && e.touches.length > 0) {
-            return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+    documentClickHandler = (e) => {
+        if (trigger.contains(e.target)) return;
+        if (!panelElement.contains(e.target)) {
+            panelElement.classList.remove(isConfigPanel ? 'ck-config-panel--active' : 'ck-panel--active');
+            document.removeEventListener('pointerdown', documentClickHandler);
+            documentClickHandler = null;
         }
-        return { clientX: e.clientX, clientY: e.clientY };
-    }
+    };
 
-    // Start drag (mouse or touch)
-    function handleDragStart(e) {
-        // Clear any existing long-press timer
-        if (longPressTimer) {
-            clearTimeout(longPressTimer);
-            longPressTimer = null;
-        }
+    setTimeout(() => {
+        document.addEventListener('pointerdown', documentClickHandler);
+    }, 200);
+}
 
-        // Start long-press detection for touch events
-        if (e.type === 'touchstart') {
-            touchStartTime = Date.now();
-            longPressTimer = setTimeout(() => {
-                // Trigger context menu after long press
-                if (!hasMoved && !isDragging) {
-                    e.preventDefault();
-                    const wasActive = configPanel.classList.contains('ck-config-panel--active');
-                    configPanel.classList.toggle('ck-config-panel--active');
+// ==================== POINTER EVENT HANDLERS ====================
 
-                    if (!wasActive && configPanel.classList.contains('ck-config-panel--active')) {
-                        setTimeout(() => {
-                            const closeConfig = (e) => {
-                                // Ignore if clicking the trigger itself
-                                if (trigger.contains(e.target)) {
-                                    return;
-                                }
+trigger.addEventListener('pointerdown', (e) => {
+    // Only handle left click for mouse
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
 
-                                if (!configPanel.contains(e.target)) {
-                                    configPanel.classList.remove('ck-config-panel--active');
-                                    document.removeEventListener('click', closeConfig);
-                                    document.removeEventListener('touchend', closeConfig);
-                                }
-                            };
-                            document.addEventListener('click', closeConfig);
-                            document.addEventListener('touchend', closeConfig);
-                        }, 200); // Increased from 100ms to 200ms for mobile compatibility
-                    }
-                    // Vibrate for haptic feedback on mobile (if supported)
-                    if (navigator.vibrate) {
-                        navigator.vibrate(50);
-                    }
-                }
-            }, LONG_PRESS_DURATION);
-        }
+    // Only track one pointer at a time
+    if (currentPointerId !== null) return;
 
-        if (!repositionMode) {
-            // Still track initial position for movement threshold
-            const coords = getClientCoords(e);
-            startDragX = coords.clientX;
-            startDragY = coords.clientY;
-            hasMoved = false;
-            return;
-        }
-        if (isResizing) return; // Don't drag while resizing
+    currentPointerId = e.pointerId;
+    trigger.setPointerCapture(e.pointerId);
 
-        isDragging = true;
-        hasMoved = false;
+    startX = e.clientX;
+    startY = e.clientY;
+    hasMoved = false;
 
-        const coords = getClientCoords(e);
-        startDragX = coords.clientX;
-        startDragY = coords.clientY;
+    // Start dragging if in reposition mode
+    if (repositionMode && !e.target.closest('.ck-resize-handle')) {
+        state = 'dragging';
         const rect = trigger.getBoundingClientRect();
-        offsetX = coords.clientX - rect.left;
-        offsetY = coords.clientY - rect.top;
-
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
         trigger.style.cursor = 'grabbing';
         trigger.style.position = 'fixed';
         trigger.style.bottom = 'auto';
-
-        animFrame = requestAnimationFrame(updatePosition);
-        e.preventDefault();
     }
 
-    // Move drag (mouse or touch)
-    function handleDragMove(e) {
-        if (isResizing) return; // Don't drag while resizing
+    e.preventDefault();
+});
 
-        const coords = getClientCoords(e);
+trigger.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== currentPointerId) return;
 
-        // Check if movement exceeds threshold
-        const deltaX = Math.abs(coords.clientX - startDragX);
-        const deltaY = Math.abs(coords.clientY - startDragY);
+    const deltaX = Math.abs(e.clientX - startX);
+    const deltaY = Math.abs(e.clientY - startY);
 
-        if (deltaX > MOVEMENT_THRESHOLD || deltaY > MOVEMENT_THRESHOLD) {
-            hasMoved = true;
-            // Cancel long-press if user moves
-            if (longPressTimer) {
-                clearTimeout(longPressTimer);
-                longPressTimer = null;
-            }
-        }
-
-        if (isDragging) {
-            currentX = coords.clientX - offsetX;
-            currentY = coords.clientY - offsetY;
-        }
+    if (deltaX > MOVE_THRESHOLD || deltaY > MOVE_THRESHOLD) {
+        hasMoved = true;
     }
 
-    // End drag (mouse or touch)
-    function handleDragEnd(e) {
-        // Clear long-press timer on touch end
-        if (longPressTimer) {
-            clearTimeout(longPressTimer);
-            longPressTimer = null;
-        }
-
-        if (isResizing) return; // Don't end drag while resizing
-        if (isDragging) {
-            isDragging = false;
-            trigger.style.cursor = repositionMode ? 'move' : '';
-
-            if (animFrame) {
-                cancelAnimationFrame(animFrame);
-                animFrame = null;
-            }
-
-            const position = {
-                left: trigger.style.left,
-                top: trigger.style.top
-            };
-            localStorage.setItem('ck-trigger-position', JSON.stringify(position));
-        }
+    if (state === 'dragging') {
+        trigger.style.left = `${e.clientX - offsetX}px`;
+        trigger.style.top = `${e.clientY - offsetY}px`;
     }
+});
 
-    // Reposition mode - allows dragging and resizing
-    let isResizing = false;
+trigger.addEventListener('pointerup', (e) => {
+    if (e.pointerId !== currentPointerId) return;
 
-    function enableRepositionMode() {
-        if (repositionMode) return;
-        repositionMode = true;
+    trigger.releasePointerCapture(e.pointerId);
+    currentPointerId = null;
 
-        // Add visual indicator
-        trigger.style.outline = '2px dashed var(--ck-primary)';
-        trigger.style.outlineOffset = '4px';
-        trigger.style.cursor = 'move';
-
-        // Add click-outside-to-exit handler with delay
-        setTimeout(() => {
-            const exitOnClickOutside = (e) => {
-                if (!trigger.contains(e.target) && !trigger._resizeHandle?.contains(e.target)) {
-                    disableRepositionMode();
-                    document.removeEventListener('click', exitOnClickOutside);
-                }
-            };
-            document.addEventListener('click', exitOnClickOutside);
-            trigger._exitClickHandler = exitOnClickOutside;
-        }, 100);
-
-        // Create resize handle
-        const resizeHandle = document.createElement('div');
-        resizeHandle.style.cssText = `
-            position: absolute;
-            bottom: 0;
-            right: 0;
-            width: 16px;
-            height: 16px;
-            background: var(--ck-primary-gradient);
-            cursor: nwse-resize;
-            border-radius: 0 0 4px 0;
-            z-index: 10;
-        `;
-        trigger.appendChild(resizeHandle);
-
-        // Resize handler
-        let startWidth, startHeight, startX, startY;
-
-        function handleResizeStart(e) {
-            isResizing = true;
-            const coords = getClientCoords(e);
-            startX = coords.clientX;
-            startY = coords.clientY;
-            const rect = trigger.getBoundingClientRect();
-            startWidth = rect.width;
-            startHeight = rect.height;
-            e.stopPropagation();
-            e.preventDefault();
-        }
-
-        function handleResizeMove(e) {
-            if (!isResizing) return;
-            const coords = getClientCoords(e);
-            const deltaX = coords.clientX - startX;
-            const deltaY = coords.clientY - startY;
-            trigger.style.width = `${Math.max(30, startWidth + deltaX)}px`;
-            trigger.style.height = `${Math.max(30, startHeight + deltaY)}px`;
-            e.preventDefault();
-        }
-
-        function handleResizeEnd(e) {
-            if (!isResizing) return;
-            isResizing = false;
-            // Save size
-            const size = {
-                width: trigger.style.width,
-                height: trigger.style.height
-            };
-            localStorage.setItem('ck-trigger-size', JSON.stringify(size));
-        }
-
-        resizeHandle.addEventListener('mousedown', handleResizeStart);
-        document.addEventListener('mousemove', handleResizeMove);
-        document.addEventListener('mouseup', handleResizeEnd);
-        resizeHandle.addEventListener('touchstart', handleResizeStart, { passive: false });
-        document.addEventListener('touchmove', handleResizeMove, { passive: false });
-        document.addEventListener('touchend', handleResizeEnd);
-
-        trigger._resizeCleanup = () => {
-            document.removeEventListener('mousemove', handleResizeMove);
-            document.removeEventListener('mouseup', handleResizeEnd);
-            document.removeEventListener('touchmove', handleResizeMove);
-            document.removeEventListener('touchend', handleResizeEnd);
+    // Save position if was dragging
+    if (state === 'dragging') {
+        const position = {
+            left: trigger.style.left,
+            top: trigger.style.top
         };
-
-        trigger._resizeHandle = resizeHandle;
+        localStorage.setItem('ck-trigger-position', JSON.stringify(position));
+        trigger.style.cursor = repositionMode ? 'move' : '';
+        state = 'idle';
+        return;
     }
 
-    function disableRepositionMode() {
-        repositionMode = false;
-        isResizing = false;
-        trigger.style.outline = '';
-        trigger.style.outlineOffset = '';
-        trigger.style.cursor = '';
+    // Handle taps (only if not moved and not in reposition mode)
+    if (!hasMoved && !repositionMode) {
+        const now = Date.now();
+        const timeSinceLastTap = now - lastTapTime;
+        const distanceFromLastTap = Math.sqrt(
+            Math.pow(e.clientX - lastTapX, 2) +
+            Math.pow(e.clientY - lastTapY, 2)
+        );
 
-        if (trigger._resizeHandle) {
-            trigger._resizeHandle.remove();
-            trigger._resizeHandle = null;
-        }
-
-        if (trigger._resizeCleanup) {
-            trigger._resizeCleanup();
-            trigger._resizeCleanup = null;
-        }
-
-        if (trigger._exitClickHandler) {
-            document.removeEventListener('click', trigger._exitClickHandler);
-            trigger._exitClickHandler = null;
-        }
-    }
-
-    // Always attach drag listeners
-    trigger.addEventListener('mousedown', handleDragStart);
-    document.addEventListener('mousemove', handleDragMove);
-    document.addEventListener('mouseup', handleDragEnd);
-    trigger.addEventListener('touchstart', handleDragStart, { passive: false });
-    document.addEventListener('touchmove', handleDragMove, { passive: false });
-    document.addEventListener('touchend', handleDragEnd);
-    document.addEventListener('touchcancel', handleDragEnd);
-
-    // Click to toggle panel
-    trigger.addEventListener('click', (e) => {
-        if (!hasMoved && !repositionMode) {
-            const wasActive = panel.classList.contains('ck-panel--active');
-            panel.classList.toggle('ck-panel--active');
-
-            // Add click-outside handler when opening panel
-            if (!wasActive && panel.classList.contains('ck-panel--active')) {
-                // Longer delay for mobile to avoid immediate close due to touch event propagation
-                setTimeout(() => {
-                    const closePanel = (e) => {
-                        // Ignore if clicking the trigger itself (already handled by toggle above)
-                        if (trigger.contains(e.target)) {
-                            return;
-                        }
-
-                        if (!panel.contains(e.target) && !configPanel.contains(e.target)) {
-                            panel.classList.remove('ck-panel--active');
-                            document.removeEventListener('click', closePanel);
-                            // Also remove touch event listener for mobile
-                            document.removeEventListener('touchend', closePanel);
-                        }
-                    };
-                    document.addEventListener('click', closePanel);
-                    // Add touchend listener for better mobile support
-                    document.addEventListener('touchend', closePanel);
-                }, 200); // Increased from 100ms to 200ms for mobile compatibility
+        // Check if this is a double-tap
+        if (timeSinceLastTap < DOUBLE_TAP_DELAY && distanceFromLastTap < DOUBLE_TAP_DISTANCE) {
+            // DOUBLE-TAP: Clear single-tap timer and open config panel
+            if (singleTapTimer) {
+                clearTimeout(singleTapTimer);
+                singleTapTimer = null;
             }
+
+            // Close regular panel if open (only one panel at a time)
+            if (panel.classList.contains('ck-panel--active')) {
+                panel.classList.remove('ck-panel--active');
+            }
+
+            const wasActive = configPanel.classList.contains('ck-config-panel--active');
+            configPanel.classList.toggle('ck-config-panel--active');
+
+            if (!wasActive && configPanel.classList.contains('ck-config-panel--active')) {
+                setupDocumentClickHandler(configPanel, true);
+            }
+
+            // Haptic feedback
+            if (navigator.vibrate) navigator.vibrate(50);
+
+            // Reset to prevent triple-tap
+            lastTapTime = 0;
+        } else {
+            // Potential first tap - wait to see if double-tap comes
+            lastTapTime = now;
+            lastTapX = e.clientX;
+            lastTapY = e.clientY;
+
+            // Clear any existing timer
+            if (singleTapTimer) {
+                clearTimeout(singleTapTimer);
+            }
+
+            // Delay single-tap action to wait for potential double-tap
+            singleTapTimer = setTimeout(() => {
+                // Close config panel if open (only one panel at a time)
+                if (configPanel.classList.contains('ck-config-panel--active')) {
+                    configPanel.classList.remove('ck-config-panel--active');
+                }
+
+                const wasActive = panel.classList.contains('ck-panel--active');
+                panel.classList.toggle('ck-panel--active');
+
+                if (!wasActive && panel.classList.contains('ck-panel--active')) {
+                    setupDocumentClickHandler(panel, false);
+                }
+
+                singleTapTimer = null;
+            }, DOUBLE_TAP_DELAY);
         }
-        hasMoved = false;
+    }
+
+    state = 'idle';
+    hasMoved = false;
+});
+
+trigger.addEventListener('pointercancel', (e) => {
+    if (e.pointerId !== currentPointerId) return;
+    currentPointerId = null;
+    state = 'idle';
+    trigger.style.cursor = repositionMode ? 'move' : '';
+
+    // Clean up any pending single-tap timer
+    if (singleTapTimer) {
+        clearTimeout(singleTapTimer);
+        singleTapTimer = null;
+    }
+});
+
+// ==================== REPOSITION MODE ====================
+
+function enableRepositionMode() {
+    if (repositionMode) return;
+    repositionMode = true;
+
+    trigger.style.outline = '2px dashed var(--ck-primary)';
+    trigger.style.outlineOffset = '4px';
+    trigger.style.cursor = 'move';
+
+    setTimeout(() => {
+        const exitOnClickOutside = (e) => {
+            if (!trigger.contains(e.target)) {
+                disableRepositionMode();
+                document.removeEventListener('pointerdown', exitOnClickOutside);
+            }
+        };
+        document.addEventListener('pointerdown', exitOnClickOutside);
+        trigger._exitClickHandler = exitOnClickOutside;
+    }, 100);
+
+    // Create resize handle
+    const resizeHandle = document.createElement('div');
+    resizeHandle.className = 'ck-resize-handle';
+    resizeHandle.style.cssText = `
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        width: 16px;
+        height: 16px;
+        background: var(--ck-primary-gradient);
+        cursor: nwse-resize;
+        border-radius: 0 0 4px 0;
+        z-index: 10;
+        touch-action: none;
+    `;
+    trigger.appendChild(resizeHandle);
+
+    // Resize with pointer events
+    let startWidth, startHeight, resizeStartX, resizeStartY;
+
+    resizeHandle.addEventListener('pointerdown', (e) => {
+        state = 'resizing';
+        resizeHandle.setPointerCapture(e.pointerId);
+        resizeStartX = e.clientX;
+        resizeStartY = e.clientY;
+        const rect = trigger.getBoundingClientRect();
+        startWidth = rect.width;
+        startHeight = rect.height;
+        e.stopPropagation();
     });
+
+    resizeHandle.addEventListener('pointermove', (e) => {
+        if (state !== 'resizing') return;
+        const deltaX = e.clientX - resizeStartX;
+        const deltaY = e.clientY - resizeStartY;
+        trigger.style.width = `${Math.max(30, startWidth + deltaX)}px`;
+        trigger.style.height = `${Math.max(30, startHeight + deltaY)}px`;
+    });
+
+    resizeHandle.addEventListener('pointerup', (e) => {
+        if (state !== 'resizing') return;
+        state = 'idle';
+        resizeHandle.releasePointerCapture(e.pointerId);
+        const size = {
+            width: trigger.style.width,
+            height: trigger.style.height
+        };
+        localStorage.setItem('ck-trigger-size', JSON.stringify(size));
+    });
+
+    trigger._resizeHandle = resizeHandle;
+}
+
+function disableRepositionMode() {
+    repositionMode = false;
+    state = 'idle';
+    trigger.style.outline = '';
+    trigger.style.outlineOffset = '';
+    trigger.style.cursor = '';
+
+    if (trigger._resizeHandle) {
+        trigger._resizeHandle.remove();
+        trigger._resizeHandle = null;
+    }
+
+    if (trigger._exitClickHandler) {
+        document.removeEventListener('pointerdown', trigger._exitClickHandler);
+        trigger._exitClickHandler = null;
+    }
+}
 
     trigger.addEventListener('contextmenu', (evt) => {
         evt.preventDefault();
+
+        // Cancel any pending single-tap timer to prevent both panels opening
+        if (singleTapTimer) {
+            clearTimeout(singleTapTimer);
+            singleTapTimer = null;
+        }
+
+        // Mark as moved so pointerup doesn't trigger tap
+        hasMoved = true;
+
+        // Close regular panel if open (only one panel at a time)
+        if (panel.classList.contains('ck-panel--active')) {
+            panel.classList.remove('ck-panel--active');
+        }
+
         const wasActive = configPanel.classList.contains('ck-config-panel--active');
         configPanel.classList.toggle('ck-config-panel--active');
 
         // Add click-outside handler when opening config panel
         if (!wasActive && configPanel.classList.contains('ck-config-panel--active')) {
-            setTimeout(() => {
-                const closeConfig = (e) => {
-                    // Ignore if clicking the trigger itself
-                    if (trigger.contains(e.target)) {
-                        return;
-                    }
-
-                    if (!configPanel.contains(e.target)) {
-                        configPanel.classList.remove('ck-config-panel--active');
-                        document.removeEventListener('click', closeConfig);
-                        document.removeEventListener('touchend', closeConfig);
-                    }
-                };
-                document.addEventListener('click', closeConfig);
-                document.addEventListener('touchend', closeConfig);
-            }, 200); // Increased from 100ms to 200ms for mobile compatibility
+            setupDocumentClickHandler(configPanel, true);
         }
     });
 
@@ -2581,6 +2553,38 @@ const init = () => {
 
     const updatePanel = (entryList, newChat = false) => {
         panel.innerHTML = '';
+
+        // Show empty state if no entries
+        if (!entryList || entryList.length === 0) {
+            const emptyState = document.createElement('div');
+            emptyState.className = 'ck-empty-state';
+
+            const emptyIcon = document.createElement('div');
+            emptyIcon.innerHTML = `
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                    <circle cx="12" cy="12" r="2" fill="none" stroke="#ff6b35" stroke-width="2"/>
+                </svg>
+            `;
+            emptyIcon.className = 'ck-empty-state__icon';
+
+            const emptyTitle = document.createElement('div');
+            emptyTitle.className = 'ck-empty-state__title';
+            emptyTitle.textContent = 'No WorldBook entries active';
+
+            const emptyDesc = document.createElement('div');
+            emptyDesc.className = 'ck-empty-state__desc';
+            emptyDesc.textContent = 'Start chatting to trigger worldbook entries';
+
+            emptyState.appendChild(emptyIcon);
+            emptyState.appendChild(emptyTitle);
+            emptyState.appendChild(emptyDesc);
+            panel.appendChild(emptyState);
+
+            updateBadge([]);
+            return; // Exit early
+        }
 
         const potatoMode = extension_settings.CarrotKernel?.potatoMode ?? false;
 
@@ -3290,44 +3294,6 @@ const init = () => {
         }
     };
 
-    //! HACK: no event when no entries are activated, only a debug message
-    const original_debug = console.debug;
-    console.debug = function(...args) {
-        if (args[0] == '[WI] Found 0 world lore entries. Sorted by strategy') {
-            // Create modern empty state with GitHub-inspired styling
-            panel.innerHTML = '';
-
-            const emptyState = document.createElement('div');
-            emptyState.className = 'ck-empty-state';
-
-            // Empty state icon
-            const emptyIcon = document.createElement('div');
-            emptyIcon.innerHTML = `
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-                    <circle cx="12" cy="12" r="2" fill="none" stroke="#ff6b35" stroke-width="2"/>
-                </svg>
-            `;
-            emptyIcon.className = 'ck-empty-state__icon';
-
-            const emptyTitle = document.createElement('div');
-            emptyTitle.className = 'ck-empty-state__title';
-            emptyTitle.textContent = 'No WorldBook entries active';
-
-            const emptyDesc = document.createElement('div');
-            emptyDesc.className = 'ck-empty-state__desc';
-            emptyDesc.textContent = 'Start chatting to trigger worldbook entries';
-
-            emptyState.appendChild(emptyIcon);
-            emptyState.appendChild(emptyTitle);
-            emptyState.appendChild(emptyDesc);
-            panel.appendChild(emptyState);
-
-            updateBadge([]);
-        }
-        return original_debug.bind(this)(...args);
-    };
 
     // Initialize panel with proper header structure
     updatePanel([]);

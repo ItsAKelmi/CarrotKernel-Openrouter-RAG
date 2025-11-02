@@ -61,7 +61,7 @@ function cleanupStaleRepositories() {
     });
 
     if (reposToRemove.length > 0) {
-        console.log('🥕 Cleaning up stale repositories:', reposToRemove);
+        CarrotDebug.ui('🥕 Cleaning up stale repositories:', reposToRemove);
         reposToRemove.forEach(repo => {
             characterRepoBooks.delete(repo);
             const charsToRemove = [];
@@ -195,7 +195,7 @@ async function manualRepositoryScan() {
             }, 2000);
         }
     } catch (error) {
-        console.error('Scan error:', error);
+        CarrotDebug.error('Scan error:', error);
         alert('Scan failed: ' + error.message);
         if (scanBtn) {
             scanBtn.textContent = originalButtonText;
@@ -536,7 +536,7 @@ function forceShowCharacterCards() {
     const popupContainer = document.getElementById('carrot-popup-container');
     if (!popupContainer || scannedCharacters.size === 0) {
         if (extension_settings[extensionName]?.debugMode) {
-            console.log('Cannot show character cards:', { popupContainer: !!popupContainer, characterCount: scannedCharacters.size });
+            CarrotDebug.ui('Cannot show character cards:', { popupContainer: !!popupContainer, characterCount: scannedCharacters.size });
         }
         return;
     }
@@ -546,7 +546,7 @@ function forceShowCharacterCards() {
     hideGettingStartedSection();
 
     if (extension_settings[extensionName]?.debugMode) {
-        console.log(`✅ Character data updated - ${scannedCharacters.size} characters available`);
+        CarrotDebug.ui(`✅ Character data updated - ${scannedCharacters.size} characters available`);
     }
 }
 

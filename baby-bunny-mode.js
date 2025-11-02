@@ -44,7 +44,7 @@ const baby_bunny_button_class = `${extensionName}_baby_bunny_button`;
 // =============================================================================
 
 async function checkForCompletedSheets(message, messageId) {
-    console.log('🐰 BABY BUNNY DEBUG: checkForCompletedSheets called', {
+    CarrotDebug.ui('🐰 BABY BUNNY DEBUG: checkForCompletedSheets called', {
         messageId: messageId,
         hasMessage: !!message,
         hasMessageText: !!message?.mes,
@@ -54,7 +54,7 @@ async function checkForCompletedSheets(message, messageId) {
     });
 
     if (!message?.mes || typeof message.mes !== 'string') {
-        console.log('🐰 BABY BUNNY DEBUG: Skipping - no valid message text');
+        CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Skipping - no valid message text');
         return;
     }
 
@@ -63,7 +63,7 @@ async function checkForCompletedSheets(message, messageId) {
     // STANDARDIZED EXTRACTION: Look for ALL BunnymoTags and Linguistics blocks
     const extractedData = extractAllSheetData(messageText);
 
-    console.log('🐰 BABY BUNNY DEBUG: Standardized extraction results', {
+    CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Standardized extraction results', {
         messageLength: messageText.length,
         bunnymoTagsFound: extractedData.bunnymoTags.length,
         linguisticsFound: extractedData.linguistics.length,
@@ -92,11 +92,11 @@ async function checkForCompletedSheets(message, messageId) {
     const hasFullsheetStructure = /^#{1,6}\s+\S+\s+\d+\s*\/\s*\d+/gim.test(messageText);
 
     if (!hasBunnymoData && !hasTagLines && !isQuicksheet && !hasFullsheetStructure) {
-        console.log('🐰 BABY BUNNY DEBUG: No recognizable sheet format detected');
+        CarrotDebug.ui('🐰 BABY BUNNY DEBUG: No recognizable sheet format detected');
         return;
     }
 
-    console.log('🐰 BABY BUNNY DEBUG: Sheet format detected', {
+    CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Sheet format detected', {
         hasBunnymoData,
         hasTagLines,
         isQuicksheet,
@@ -115,7 +115,7 @@ async function checkForCompletedSheets(message, messageId) {
 
     // Process each BunnymoTags block with batch-specific parser
     for (const bunnymoBlock of extractedData.bunnymoTags) {
-        console.log('🐰 BABY BUNNY DEBUG: Processing BunnymoTags block', {
+        CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Processing BunnymoTags block', {
             fullContent: bunnymoBlock.substring(0, 100) + '...',
             fullLength: bunnymoBlock.length
         });
@@ -128,7 +128,7 @@ async function checkForCompletedSheets(message, messageId) {
 
     // If no BunnymoTags but we have Linguistics, create character from Linguistics
     if (extractedData.bunnymoTags.length === 0 && extractedData.linguistics.length > 0) {
-        console.log('🐰 BABY BUNNY DEBUG: No BunnymoTags found, creating character from Linguistics only');
+        CarrotDebug.ui('🐰 BABY BUNNY DEBUG: No BunnymoTags found, creating character from Linguistics only');
         const characterInfo = extractCharacterFromSheetData('', extractedData.linguistics, messageText);
         if (characterInfo) {
             characterData.push(characterInfo);
@@ -137,7 +137,7 @@ async function checkForCompletedSheets(message, messageId) {
 
     // If NO BunnymoTags or Linguistics but we detected a sheet format, create generic character data
     if (characterData.length === 0 && (hasTagLines || isQuicksheet || hasFullsheetStructure)) {
-        console.log('🐰 BABY BUNNY DEBUG: No BunnymoTags/Linguistics, creating generic character from detected sheet format');
+        CarrotDebug.ui('🐰 BABY BUNNY DEBUG: No BunnymoTags/Linguistics, creating generic character from detected sheet format');
 
         // Try to extract character name from common patterns
         let characterName = 'Unknown Character';
@@ -156,7 +156,7 @@ async function checkForCompletedSheets(message, messageId) {
             }
         }
 
-        console.log('🐰 BABY BUNNY DEBUG: Extracted character name:', characterName);
+        CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Extracted character name:', characterName);
 
         // Create generic character data
         const characterInfo = {
@@ -167,27 +167,27 @@ async function checkForCompletedSheets(message, messageId) {
         };
 
         characterData.push(characterInfo);
-        console.log('🐰 BABY BUNNY DEBUG: Created generic character with full data');
+        CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Created generic character with full data');
     }
 
     if (characterData.length > 0) {
-        console.log('🐰 BABY BUNNY DEBUG: About to show popup for characters', {
+        CarrotDebug.ui('🐰 BABY BUNNY DEBUG: About to show popup for characters', {
             characterCount: characterData.length,
             characters: characterData.map(c => ({ name: c.name, tagsLength: c.tags.length }))
         });
 
         // If multiple characters found, show batch popup
         if (characterData.length > 1) {
-            console.log('🐰 BABY BUNNY DEBUG: Multiple characters detected, showing batch popup');
+            CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Multiple characters detected, showing batch popup');
             await showBatchBabyBunnyPopup(characterData);
         } else {
             // Single character - show individual popup
-            console.log('🐰 BABY BUNNY DEBUG: Calling showBabyBunnyPopup for character:', characterData[0].name);
+            CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Calling showBabyBunnyPopup for character:', characterData[0].name);
             await showBabyBunnyPopup(characterData[0]);
-            console.log('🐰 BABY BUNNY DEBUG: showBabyBunnyPopup completed for character:', characterData[0].name);
+            CarrotDebug.ui('🐰 BABY BUNNY DEBUG: showBabyBunnyPopup completed for character:', characterData[0].name);
         }
     } else {
-        console.log('🐰 BABY BUNNY DEBUG: No character data found to show popup for');
+        CarrotDebug.ui('🐰 BABY BUNNY DEBUG: No character data found to show popup for');
     }
 }
 
@@ -198,7 +198,7 @@ function extractAllSheetData(messageText) {
         linguistics: []
     };
 
-    console.log('🐰 RAW MESSAGE DEBUG:', {
+    CarrotDebug.ui('🐰 RAW MESSAGE DEBUG:', {
         messageLength: messageText.length,
         containsBunnymoTags: messageText.includes('BunnymoTags'),
         bunnymoTagsCount: (messageText.match(/<BunnymoTags>/gi) || []).length,
@@ -218,7 +218,7 @@ function extractAllSheetData(messageText) {
     const seenBlocks = new Set();
     for (const regex of bunnymoRegexes) {
         const matches = [...messageText.matchAll(regex)];
-        console.log(`🐰 REGEX DEBUG: ${regex.source} found ${matches.length} matches`);
+        CarrotDebug.ui(`🐰 REGEX DEBUG: ${regex.source} found ${matches.length} matches`);
         for (const match of matches) {
             const fullBlock = match[0].trim();
             // Normalize for comparison (lowercase, remove extra whitespace)
@@ -227,22 +227,22 @@ function extractAllSheetData(messageText) {
             if (!seenBlocks.has(normalizedBlock)) {
                 seenBlocks.add(normalizedBlock);
                 allBlocks.push(fullBlock);
-                console.log(`🐰 BLOCK FOUND: ${fullBlock.substring(0, 100)}... (${fullBlock.length} chars)`);
+                CarrotDebug.ui(`🐰 BLOCK FOUND: ${fullBlock.substring(0, 100)}... (${fullBlock.length} chars)`);
             } else {
-                console.log(`🐰 DUPLICATE BLOCK SKIPPED: ${fullBlock.substring(0, 50)}...`);
+                CarrotDebug.ui(`🐰 DUPLICATE BLOCK SKIPPED: ${fullBlock.substring(0, 50)}...`);
             }
         }
     }
 
     // FALLBACK PARSER: If we found fewer than expected, try to find unclosed tags
     if (allBlocks.length === 0 || (messageText.match(/<BunnymoTags>/gi) || []).length > allBlocks.length) {
-        console.log('🐰 FALLBACK PARSER: Detected unclosed or partial BunnymoTags, attempting recovery...');
+        CarrotDebug.ui('🐰 FALLBACK PARSER: Detected unclosed or partial BunnymoTags, attempting recovery...');
 
         // Find all opening tags and try to extract content until the next opening tag or end of message
         const openingTagPattern = /<BunnymoTags>/gi;
         const openingMatches = [...messageText.matchAll(openingTagPattern)];
 
-        console.log(`🐰 FALLBACK: Found ${openingMatches.length} opening tags`);
+        CarrotDebug.ui(`🐰 FALLBACK: Found ${openingMatches.length} opening tags`);
 
         for (let i = 0; i < openingMatches.length; i++) {
             const startPos = openingMatches[i].index;
@@ -259,11 +259,11 @@ function extractAllSheetData(messageText) {
             } else if (nextOpeningTag !== -1) {
                 // No closing tag, but there's another opening tag - extract up to it
                 endPos = nextOpeningTag;
-                console.log('🐰 FALLBACK: No closing tag found, extracting until next opening tag');
+                CarrotDebug.ui('🐰 FALLBACK: No closing tag found, extracting until next opening tag');
             } else {
                 // Last tag in message, no closing tag - extract to end
                 endPos = messageText.length;
-                console.log('🐰 FALLBACK: No closing tag found, extracting to end of message');
+                CarrotDebug.ui('🐰 FALLBACK: No closing tag found, extracting to end of message');
             }
 
             // Extract the block
@@ -277,7 +277,7 @@ function extractAllSheetData(messageText) {
 
             if (openLingMatches.length > closeLingMatches.length) {
                 const unclosedCount = openLingMatches.length - closeLingMatches.length;
-                console.log(`🐰 FALLBACK: Found ${unclosedCount} unclosed <Linguistics> tag(s), adding closing tag(s)`);
+                CarrotDebug.ui(`🐰 FALLBACK: Found ${unclosedCount} unclosed <Linguistics> tag(s), adding closing tag(s)`);
 
                 // Add missing closing tags before the BunnymoTags closing tag
                 for (let j = 0; j < unclosedCount; j++) {
@@ -293,7 +293,7 @@ function extractAllSheetData(messageText) {
             // If we didn't find a closing BunnymoTags tag, add one
             if (!extractedBlock.endsWith('</BunnymoTags>')) {
                 extractedBlock += '</BunnymoTags>';
-                console.log('🐰 FALLBACK: Added missing </BunnymoTags> closing tag');
+                CarrotDebug.ui('🐰 FALLBACK: Added missing </BunnymoTags> closing tag');
             }
 
             // Check for duplicates
@@ -301,7 +301,7 @@ function extractAllSheetData(messageText) {
             if (!seenBlocks.has(normalizedBlock)) {
                 seenBlocks.add(normalizedBlock);
                 allBlocks.push(extractedBlock);
-                console.log(`🐰 FALLBACK: Recovered block ${i + 1}: ${extractedBlock.substring(0, 100)}... (${extractedBlock.length} chars)`);
+                CarrotDebug.ui(`🐰 FALLBACK: Recovered block ${i + 1}: ${extractedBlock.substring(0, 100)}... (${extractedBlock.length} chars)`);
             }
         }
     }
@@ -318,7 +318,7 @@ function extractAllSheetData(messageText) {
 
         if (uniqueNames.size > 1) {
             // Multiple different character names = separate character sheets
-            console.log('🐰 MULTI-CHARACTER DETECTION: Found separate character sheets:', {
+            CarrotDebug.ui('🐰 MULTI-CHARACTER DETECTION: Found separate character sheets:', {
                 totalBlocks: allBlocks.length,
                 characterNames: Array.from(uniqueNames)
             });
@@ -338,7 +338,7 @@ function extractAllSheetData(messageText) {
                 return bLength - aLength;
             });
 
-            console.log('🐰 FULLSHEET DETECTION: Multiple BunnymoTags blocks found, prioritizing largest/most complete:', {
+            CarrotDebug.ui('🐰 FULLSHEET DETECTION: Multiple BunnymoTags blocks found, prioritizing largest/most complete:', {
                 totalBlocks: allBlocks.length,
                 blockSizes: allBlocks.map(b => `${b.length} chars, ${(b.match(/</g) || []).length} tags`),
                 selectedBlock: `${allBlocks[0].length} chars, ${(allBlocks[0].match(/</g) || []).length} tags`
@@ -369,7 +369,7 @@ function extractAllSheetData(messageText) {
         }
     }
 
-    console.log('🐰 STANDARDIZED EXTRACTION DEBUG:', {
+    CarrotDebug.ui('🐰 STANDARDIZED EXTRACTION DEBUG:', {
         bunnymoTagsFound: result.bunnymoTags.length,
         linguisticsFound: result.linguistics.length,
         bunnymoSamples: result.bunnymoTags.map(b => b.substring(0, 50) + '...'),
@@ -386,7 +386,7 @@ function extractAllSheetData(messageText) {
 // BATCH-SPECIFIC: Extract character from a single BunnymoTags block
 // This parser treats the entire BunnymoTags block as complete - no appending
 function extractCharacterFromBatchBlock(bunnymoBlock, fullMessageText) {
-    console.log('🐰 BATCH PARSER: Processing block', {
+    CarrotDebug.ui('🐰 BATCH PARSER: Processing block', {
         blockLength: bunnymoBlock.length,
         preview: bunnymoBlock.substring(0, 100) + '...'
     });
@@ -396,7 +396,7 @@ function extractCharacterFromBatchBlock(bunnymoBlock, fullMessageText) {
     const nameMatch = bunnymoBlock.match(/<Name:([^>]+)>/i);
     if (nameMatch) {
         characterName = nameMatch[1].trim();
-        console.log('🐰 BATCH PARSER: Found character name:', characterName);
+        CarrotDebug.ui('🐰 BATCH PARSER: Found character name:', characterName);
     } else {
         // Fallback to trying to extract from linguistics or context
         const lingMatch = bunnymoBlock.match(/([A-Z][a-z]+)'s\s+primary\s+mode\s+of\s+speech/i);
@@ -405,7 +405,7 @@ function extractCharacterFromBatchBlock(bunnymoBlock, fullMessageText) {
         } else {
             characterName = 'Character';
         }
-        console.log('🐰 BATCH PARSER: Using fallback name:', characterName);
+        CarrotDebug.ui('🐰 BATCH PARSER: Using fallback name:', characterName);
     }
 
     // The entire BunnymoTags block is the complete data
@@ -416,7 +416,7 @@ function extractCharacterFromBatchBlock(bunnymoBlock, fullMessageText) {
 
     // If NO linguistics inside, look for standalone Linguistics blocks in the full message (old format)
     if (!hasLinguisticsInside) {
-        console.log('🐰 BATCH PARSER: No linguistics found inside BunnymoTags, checking for standalone blocks (old format)...');
+        CarrotDebug.ui('🐰 BATCH PARSER: No linguistics found inside BunnymoTags, checking for standalone blocks (old format)...');
 
         // Try to find a standalone Linguistics block near this character's block
         const linguisticsRegexes = [
@@ -438,14 +438,14 @@ function extractCharacterFromBatchBlock(bunnymoBlock, fullMessageText) {
             if (matches.length > 0) {
                 // Found a standalone linguistics block - append it
                 const linguisticsBlock = matches[0][0].trim();
-                console.log('🐰 BATCH PARSER: Found standalone Linguistics block (old format), appending...');
+                CarrotDebug.ui('🐰 BATCH PARSER: Found standalone Linguistics block (old format), appending...');
                 completeCharacterData += '\n\n' + linguisticsBlock;
                 break;
             }
         }
     }
 
-    console.log('🐰 BATCH PARSER: Extraction complete', {
+    CarrotDebug.ui('🐰 BATCH PARSER: Extraction complete', {
         characterName,
         dataLength: completeCharacterData.length,
         containsLinguistics: completeCharacterData.includes('<Linguistics>') || completeCharacterData.includes('<linguistics>'),
@@ -471,7 +471,7 @@ function extractCharacterFromSheetData(bunnymoBlock, linguisticsBlocks, fullMess
         const nameMatch = bunnymoBlock.match(/<Name:([^>]+)>/i);
         if (nameMatch) {
             characterName = nameMatch[1].trim();
-            console.log('🐰 NAME EXTRACTION: Found from BunnymoTags <Name:> tag:', characterName);
+            CarrotDebug.ui('🐰 NAME EXTRACTION: Found from BunnymoTags <Name:> tag:', characterName);
         }
     }
 
@@ -488,7 +488,7 @@ function extractCharacterFromSheetData(bunnymoBlock, linguisticsBlocks, fullMess
                 const match = linguisticsBlock.match(pattern);
                 if (match) {
                     characterName = match[1].trim();
-                    console.log('🐰 NAME EXTRACTION: Found from Linguistics:', { pattern: pattern.source, name: characterName });
+                    CarrotDebug.ui('🐰 NAME EXTRACTION: Found from Linguistics:', { pattern: pattern.source, name: characterName });
                     break;
                 }
             }
@@ -508,7 +508,7 @@ function extractCharacterFromSheetData(bunnymoBlock, linguisticsBlocks, fullMess
             const match = fullMessageText.match(pattern);
             if (match) {
                 characterName = match[1].trim();
-                console.log('🐰 NAME EXTRACTION: Found from full message:', { pattern: pattern.source, name: characterName });
+                CarrotDebug.ui('🐰 NAME EXTRACTION: Found from full message:', { pattern: pattern.source, name: characterName });
                 break;
             }
         }
@@ -517,7 +517,7 @@ function extractCharacterFromSheetData(bunnymoBlock, linguisticsBlocks, fullMess
     // Fallback name
     if (!characterName) {
         characterName = 'Character';
-        console.log('🐰 NAME EXTRACTION: Using fallback name');
+        CarrotDebug.ui('🐰 NAME EXTRACTION: Using fallback name');
     }
 
     // Combine all data
@@ -534,7 +534,7 @@ function extractCharacterFromSheetData(bunnymoBlock, linguisticsBlocks, fullMess
         completeCharacterData += linguisticsBlocks.join('\n\n');
     }
 
-    console.log('🐰 SHEET DATA EXTRACTION COMPLETE:', {
+    CarrotDebug.ui('🐰 SHEET DATA EXTRACTION COMPLETE:', {
         characterName: characterName,
         hasBunnymoTags: !!bunnymoBlock,
         linguisticsCount: linguisticsBlocks.length,
@@ -563,7 +563,7 @@ function extractCharacterFromTags(tagsContent, fullMessageText, fullTagsContent)
 
     if (nameMatch) {
         characterName = nameMatch[1].trim();
-        console.log('🐰 BABY BUNNY DEBUG: Found name from tags:', characterName);
+        CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Found name from tags:', characterName);
     } else {
         // Try different name patterns
         const patterns = [
@@ -579,18 +579,18 @@ function extractCharacterFromTags(tagsContent, fullMessageText, fullTagsContent)
             const match = fullMessageText.match(pattern);
             if (match) {
                 characterName = match[1].trim();
-                console.log('🐰 BABY BUNNY DEBUG: Found name from pattern:', { pattern: pattern.source, name: characterName });
+                CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Found name from pattern:', { pattern: pattern.source, name: characterName });
                 break;
             }
         }
 
         if (!characterName) {
             characterName = 'Character';
-            console.log('🐰 BABY BUNNY DEBUG: Using fallback name');
+            CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Using fallback name');
         }
     }
 
-    console.log('🐰 BABY BUNNY DEBUG: Character extraction', {
+    CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Character extraction', {
         characterName: characterName,
         tagsContentLength: tagsContent.length,
         fullTagsContentLength: fullTagsContent.length,
@@ -1088,7 +1088,7 @@ async function showBatchBabyBunnyPopup(charactersData) {
         overlay.show();
         $('html, body').scrollTop(0);
 
-        console.log('🐰 BATCH BABY BUNNY DEBUG: Popup displayed for', charactersData.length, 'characters');
+        CarrotDebug.ui('🐰 BATCH BABY BUNNY DEBUG: Popup displayed for', charactersData.length, 'characters');
 
         // === EVENT HANDLERS ===
 
@@ -1132,7 +1132,7 @@ async function showBatchBabyBunnyPopup(charactersData) {
             const selectedCount = popup.find('.batch-character-config[data-enabled="true"]').length;
             popup.find('#batch-selected-count').text(selectedCount);
 
-            console.log('🐰 BATCH: Character toggle', { charIndex, enabled: isEnabled, selectedCount });
+            CarrotDebug.ui('🐰 BATCH: Character toggle', { charIndex, enabled: isEnabled, selectedCount });
         });
 
         // Initialize toggle slider positions
@@ -1142,14 +1142,14 @@ async function showBatchBabyBunnyPopup(charactersData) {
 
         // "Process Individually" button - sends each character through single popup
         popup.find('#batch-process-individually').on('click', async function() {
-            console.log('🐰 BATCH: Processing characters individually');
+            CarrotDebug.ui('🐰 BATCH: Processing characters individually');
             overlay.remove();
 
             // Process each enabled character through the normal single-character popup
             for (let i = 0; i < charactersData.length; i++) {
                 const isEnabled = popup.find(`.batch-character-config[data-char-index="${i}"]`).attr('data-enabled') === 'true';
                 if (isEnabled) {
-                    console.log('🐰 BATCH: Processing character individually:', charactersData[i].name);
+                    CarrotDebug.ui('🐰 BATCH: Processing character individually:', charactersData[i].name);
                     await showBabyBunnyPopup(charactersData[i]);
                 }
             }
@@ -1246,7 +1246,7 @@ async function showBatchBabyBunnyPopup(charactersData) {
 
         // Cancel button
         popup.find('#batch-bunny-cancel').on('click', function() {
-            console.log('🐰 BATCH BABY BUNNY DEBUG: Cancelled');
+            CarrotDebug.ui('🐰 BATCH BABY BUNNY DEBUG: Cancelled');
             overlay.remove();
             resolve(false);
         });
@@ -1256,7 +1256,7 @@ async function showBatchBabyBunnyPopup(charactersData) {
             const mode = popup.find('input[name="batch-grouping-mode"]:checked').val();
             const scope = popup.find('input[name="batch-lorebook-scope"]:checked').val();
 
-            console.log('🐰 BATCH BABY BUNNY DEBUG: Creating archives', { mode, scope });
+            CarrotDebug.ui('🐰 BATCH BABY BUNNY DEBUG: Creating archives', { mode, scope });
 
             // Collect character configurations - ONLY ENABLED ONES
             const characterConfigs = charactersData
@@ -1292,7 +1292,7 @@ async function showBatchBabyBunnyPopup(charactersData) {
                 return;
             }
 
-            console.log('🐰 BATCH: Processing', characterConfigs.length, 'enabled characters');
+            CarrotDebug.ui('🐰 BATCH: Processing', characterConfigs.length, 'enabled characters');
 
             overlay.remove();
 
@@ -1342,7 +1342,7 @@ async function showBatchBabyBunnyPopup(charactersData) {
 
 // Helper function: Process all characters to a single lorebook
 async function processBatchToSingleLorebook(characterConfigs, lorebookName, createNew, scope) {
-    console.log('🐰 BATCH PROCESSING: Single lorebook mode', { lorebookName, createNew, characterCount: characterConfigs.length });
+    CarrotDebug.ui('🐰 BATCH PROCESSING: Single lorebook mode', { lorebookName, createNew, characterCount: characterConfigs.length });
 
     // Create or load the lorebook
     let lorebook;
@@ -1371,7 +1371,7 @@ async function processBatchToSingleLorebook(characterConfigs, lorebookName, crea
 
 // Helper function: Process single character to its own archive
 async function processSingleCharacterArchive(config, lorebookName, createNew, scope) {
-    console.log('🐰 BATCH PROCESSING: Single character mode', { name: config.entryName, lorebookName });
+    CarrotDebug.ui('🐰 BATCH PROCESSING: Single character mode', { name: config.entryName, lorebookName });
 
     let lorebook;
     if (createNew) {
@@ -1398,7 +1398,7 @@ async function addCharacterToLorebook(lorebook, config, lorebookName) {
     const newEntry = createWorldInfoEntry(lorebookName, lorebook);
 
     if (!newEntry) {
-        console.error('🐰 BATCH PROCESSING ERROR: Failed to create entry for', config.entryName);
+        CarrotDebug.error('🐰 BATCH PROCESSING ERROR: Failed to create entry for', config.entryName);
         return;
     }
 
@@ -1432,7 +1432,7 @@ async function addCharacterToLorebook(lorebook, config, lorebookName) {
     newEntry.probability = 100;
     newEntry.useProbability = false;
 
-    console.log('🐰 BATCH PROCESSING: Added entry', {
+    CarrotDebug.ui('🐰 BATCH PROCESSING: Added entry', {
         name: config.entryName,
         triggers: config.triggers,
         uid: newEntry.uid
@@ -1443,10 +1443,10 @@ async function addCharacterToLorebook(lorebook, config, lorebookName) {
 async function createNewLorebook(name) {
     try {
         await createNewWorldInfo(name);
-        console.log('🐰 BATCH PROCESSING: Created new lorebook', { name });
+        CarrotDebug.ui('🐰 BATCH PROCESSING: Created new lorebook', { name });
         return { name, entries: [] };
     } catch (error) {
-        console.error('🐰 BATCH PROCESSING ERROR: Failed to create lorebook', error);
+        CarrotDebug.error('🐰 BATCH PROCESSING ERROR: Failed to create lorebook', error);
         return null;
     }
 }
@@ -1455,10 +1455,10 @@ async function createNewLorebook(name) {
 async function loadExistingLorebook(name) {
     try {
         const data = await loadWorldInfo(name);
-        console.log('🐰 BATCH PROCESSING: Loaded existing lorebook', { name, entryCount: data.entries?.length });
+        CarrotDebug.ui('🐰 BATCH PROCESSING: Loaded existing lorebook', { name, entryCount: data.entries?.length });
         return data;
     } catch (error) {
-        console.error('🐰 BATCH PROCESSING ERROR: Failed to load lorebook', error);
+        CarrotDebug.error('🐰 BATCH PROCESSING ERROR: Failed to load lorebook', error);
         return null;
     }
 }
@@ -1467,10 +1467,10 @@ async function loadExistingLorebook(name) {
 async function saveLorebook(lorebook, name) {
     try {
         await saveWorldInfo(name, lorebook);
-        console.log('🐰 BATCH PROCESSING: Saved lorebook', { name });
+        CarrotDebug.ui('🐰 BATCH PROCESSING: Saved lorebook', { name });
         return true;
     } catch (error) {
-        console.error('🐰 BATCH PROCESSING ERROR: Failed to save lorebook', error);
+        CarrotDebug.error('🐰 BATCH PROCESSING ERROR: Failed to save lorebook', error);
         return false;
     }
 }
@@ -1811,7 +1811,7 @@ async function showBabyBunnyPopup(characterData, options = {}) {
         overlay.show();
         $('html, body').scrollTop(0);
 
-        console.log('🐰 BABY BUNNY DEBUG: Popup displayed', {
+        CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Popup displayed', {
             overlayAdded: true,
             overlayVisible: overlay.is(':visible'),
             overlayInDOM: overlay.parent().length > 0,
@@ -1827,7 +1827,7 @@ async function showBabyBunnyPopup(characterData, options = {}) {
 
         // Additional debug: test that the overlay is actually clickable
         setTimeout(() => {
-            console.log('🐰 BABY BUNNY DEBUG: Popup still visible after 1 second?', {
+            CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Popup still visible after 1 second?', {
                 overlayVisible: overlay.is(':visible'),
                 overlayExists: $('.baby-bunny-overlay').length > 0
             });
@@ -1882,10 +1882,10 @@ async function showBabyBunnyPopup(characterData, options = {}) {
                     if (fullsheetInfo) {
                         characterName = fullsheetInfo.characterName;
                         content = fullsheetInfo.content;
-                        console.log('✅ Detected as fullsheet format');
+                        CarrotDebug.ui('✅ Detected as fullsheet format');
                     } else {
                         // Not a fullsheet - use sheet as-is for chunking
-                        console.log('ℹ️ Not a fullsheet format - chunking as raw sheet content');
+                        CarrotDebug.ui('ℹ️ Not a fullsheet format - chunking as raw sheet content');
                     }
 
                     CarrotDebug.ui('Baby Bunny Mode: Skip to chunking triggered', {
@@ -1903,7 +1903,7 @@ async function showBabyBunnyPopup(characterData, options = {}) {
 
                     resolve(true);
                 } catch (error) {
-                    console.error('BABY BUNNY ERROR: Skip to chunking failed', error);
+                    CarrotDebug.error('BABY BUNNY ERROR: Skip to chunking failed', error);
                     // Only show toastr for unexpected errors not already handled by vectorizeFullsheetFromMessage
                     if (!error.message.includes('vectorization') && !error.message.includes('RAG')) {
                         toastr.error(`Failed to process fullsheet: ${error.message}`);
@@ -2191,7 +2191,7 @@ async function createCharacterArchive(characterName, triggers, lorebookName, tag
             throw new Error(`Failed to load created lorebook: ${lorebookName}`);
         }
 
-        console.log('🐰 BABY BUNNY DEBUG: Creating entry with currentWorldInfo', {
+        CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Creating entry with currentWorldInfo', {
             lorebookName,
             existingEntries: Object.keys(currentWorldInfo.entries || {}).length,
             currentWorldInfoStructure: currentWorldInfo,
@@ -2298,14 +2298,14 @@ async function createCharacterArchive(characterName, triggers, lorebookName, tag
         newEntry.useGroupScoring = null; // Match Egyptian Royalty format
         newEntry.outletName = ''; // Match Egyptian Royalty format
 
-        console.log('🐰 BABY BUNNY DEBUG: Entry configured', {
+        CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Entry configured', {
             entryId: newEntry.uid,
             contentLength: newEntry.content.length,
             triggers: newEntry.key,
             comment: newEntry.comment
         });
 
-        console.log('🐰 BABY BUNNY DEBUG: About to save lorebook (NemoLore approach)', {
+        CarrotDebug.ui('🐰 BABY BUNNY DEBUG: About to save lorebook (NemoLore approach)', {
             lorebookName,
             entriesCount: Object.keys(currentWorldInfo.entries || {}).length,
             entriesStructure: currentWorldInfo.entries,
@@ -2323,7 +2323,7 @@ async function createCharacterArchive(characterName, triggers, lorebookName, tag
         const verificationWorldInfo = await loadWorldInfo(lorebookName);
         const savedEntriesCount = Object.keys(verificationWorldInfo?.entries || {}).length;
 
-        console.log('🐰 BABY BUNNY DEBUG: Save verification', {
+        CarrotDebug.ui('🐰 BABY BUNNY DEBUG: Save verification', {
             lorebookName,
             savedEntriesCount,
             verificationPassed: savedEntriesCount > 0,
@@ -2391,23 +2391,23 @@ let currentTab = 'chunks'; // 'chunks' or 'original'
  * @param {string} content - Fullsheet content
  */
 export async function openBabyBunnyChunking(charName, content) {
-    console.log('🐰 CHUNKING: openBabyBunnyChunking called', { charName, contentLength: content?.length });
+    CarrotDebug.ui('🐰 CHUNKING: openBabyBunnyChunking called', { charName, contentLength: content?.length });
 
     characterName = charName;
     fullsheetContent = content;
 
     try {
         // Generate initial chunk preview
-        console.log('🐰 CHUNKING: Generating chunk preview...');
+        CarrotDebug.ui('🐰 CHUNKING: Generating chunk preview...');
         await generateChunkPreview();
-        console.log('🐰 CHUNKING: Generated', previewChunks.length, 'chunks');
+        CarrotDebug.ui('🐰 CHUNKING: Generated', previewChunks.length, 'chunks');
 
         // Show the modal
-        console.log('🐰 CHUNKING: Showing modal...');
+        CarrotDebug.ui('🐰 CHUNKING: Showing modal...');
         showChunkingModal();
-        console.log('🐰 CHUNKING: Modal should be visible now');
+        CarrotDebug.ui('🐰 CHUNKING: Modal should be visible now');
     } catch (error) {
-        console.error('🐰 CHUNKING ERROR:', error);
+        CarrotDebug.error('🐰 CHUNKING ERROR:', error);
         toastr.error(`Failed to open chunking modal: ${error.message}`);
     }
 }
@@ -2454,9 +2454,9 @@ async function generateChunkPreview() {
  * Show the chunking modal
  */
 function showChunkingModal() {
-    console.log('🐰 CHUNKING: showChunkingModal called');
+    CarrotDebug.ui('🐰 CHUNKING: showChunkingModal called');
     createModalIfNeeded();
-    console.log('🐰 CHUNKING: Modal created, element exists?', $('#carrot-baby-chunking-modal').length > 0);
+    CarrotDebug.ui('🐰 CHUNKING: Modal created, element exists?', $('#carrot-baby-chunking-modal').length > 0);
 
     // Set global character name and context level
     $('#chunking-character-name').val(characterName);
@@ -2472,8 +2472,8 @@ function showChunkingModal() {
     $modal.addClass('active').css('display', 'flex');
     $('body').css('overflow', 'hidden');
 
-    console.log('🐰 CHUNKING: Modal display set, is visible?', $modal.is(':visible'));
-    console.log('🐰 CHUNKING: Modal has active class?', $modal.hasClass('active'));
+    CarrotDebug.ui('🐰 CHUNKING: Modal display set, is visible?', $modal.is(':visible'));
+    CarrotDebug.ui('🐰 CHUNKING: Modal has active class?', $modal.hasClass('active'));
 }
 
 /**
@@ -2868,8 +2868,7 @@ function renderChunkPreviews() {
                             const normalized = normalizeKeyword(keyword);
                             if (!chunk.customWeights) chunk.customWeights = {};
                             chunk.customWeights[normalized] = clampedWeight;
-
-                            console.log(`✅ Regex weight saved for "${keyword}": ${clampedWeight}`);
+                            // Spam log removed - fired on every weight change
                         });
 
                     const $weightWrapper = $('<span>').css('margin-left', '2px').text('[').append($weight).append(']');
@@ -2934,8 +2933,7 @@ function renderChunkPreviews() {
                         const normalized = normalizeKeyword(keyword);
                         if (!chunk.customWeights) chunk.customWeights = {};
                         chunk.customWeights[normalized] = clampedWeight;
-
-                        console.log(`✅ Weight saved for "${keyword}": ${clampedWeight}`);
+                        // Spam log removed - fired on every weight change
                     });
 
                 const $weightWrapper = $('<span>').css('margin-left', '2px').text('[').append($weight).append(']');
@@ -3599,7 +3597,7 @@ async function finalizeChunks() {
         }
 
     } catch (error) {
-        console.error('Failed to finalize chunks:', error);
+        CarrotDebug.error('Failed to finalize chunks:', error);
         toastr.error(`Failed to finalize chunks: ${error.message}`);
     } finally {
         $btn.prop('disabled', false).html(originalHTML);
@@ -3929,7 +3927,7 @@ function closeBabyBunnyTutorial() {
 
 function initialize_baby_bunny_message_button() {
     // Add the message button to the chat messages
-    console.log("🐰 Initializing message button")
+    // Initialization is silent - no logs needed
 
     let html = `
 <div title="🐰 Manual Baby Bunny Mode - Process this message as a character sheet" class="mes_button ${baby_bunny_button_class}" tabindex="0">
@@ -3947,10 +3945,10 @@ function initialize_baby_bunny_message_button() {
         const message_block = $(this).closest(".mes");
         const message_id = Number(message_block.attr("mesid"));
 
-        console.log('🐰 Baby Bunny button clicked for message:', message_id);
+        CarrotDebug.ui('🐰 Baby Bunny button clicked for message:', message_id);
 
         // Debug: Log message info
-        console.log('🐰 Debugging message lookup:', {
+        CarrotDebug.ui('🐰 Debugging message lookup:', {
             message_id: message_id,
             messageIdType: typeof message_id,
             chatLength: chat.length,
@@ -3972,64 +3970,64 @@ function initialize_baby_bunny_message_button() {
         }
 
         if (!targetMessage) {
-            console.warn('🐰 Could not find message in chat array after trying all methods');
+            CarrotDebug.error('🐰 Could not find message in chat array after trying all methods');
             toastr.warning('Could not find message to process.');
             return;
         }
 
-        console.log('🐰 Manual Baby Bunny Mode triggered - processing message as character sheet');
+        CarrotDebug.ui('🐰 Manual Baby Bunny Mode triggered - processing message as character sheet');
         toastr.success('🐰 Processing message with Baby Bunny Mode...');
 
         // Manually trigger the Baby Bunny Mode processing
         await checkForCompletedSheets(targetMessage, message_id);
 
         // Baby Bunny Mode handles everything - no need for separate RAG confirmation
-        console.log('✅ Baby Bunny Mode completed - skipping RAG confirmation (handled via Skip to Chunking button)');
+        CarrotDebug.ui('✅ Baby Bunny Mode completed - skipping RAG confirmation (handled via Skip to Chunking button)');
         return;
 
         // Check if this is also a fullsheet and offer to vectorize (DISABLED - now handled by Baby Bunny Mode)
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.log('🔬 CHECKING FOR FULLSHEET VECTORIZATION OPPORTUNITY');
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        CarrotDebug.ui('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        CarrotDebug.ui('🔬 CHECKING FOR FULLSHEET VECTORIZATION OPPORTUNITY');
+        CarrotDebug.ui('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
         try {
-            console.log('Step 1: Ensuring RAG module is loaded...');
+            CarrotDebug.ui('Step 1: Ensuring RAG module is loaded...');
             await fullsheetRAGPromise;
-            console.log('   Module loaded successfully');
+            CarrotDebug.ui('   Module loaded successfully');
 
-            console.log('Step 2: Checking if RAG is enabled...');
+            CarrotDebug.ui('Step 2: Checking if RAG is enabled...');
             const ragEnabled = extension_settings[extensionName]?.rag?.enabled;
-            console.log(`   RAG enabled: ${ragEnabled}`);
-            console.log(`   Extension settings:`, extension_settings[extensionName]?.rag);
+            CarrotDebug.ui(`   RAG enabled: ${ragEnabled}`);
+            CarrotDebug.ui(`   Extension settings:`, extension_settings[extensionName]?.rag);
 
             if (!ragEnabled) {
-                console.log('❌ RAG is not enabled - skipping vectorization check');
-                console.log('   To enable: Go to CarrotKernel settings and enable RAG');
+                CarrotDebug.ui('❌ RAG is not enabled - skipping vectorization check');
+                CarrotDebug.ui('   To enable: Go to CarrotKernel settings and enable RAG');
                 return;
             }
 
-            console.log('Step 3: Detecting fullsheet in message...');
-            console.log(`   Message length: ${targetMessage.mes?.length || 0} chars`);
-            console.log(`   Message preview:`, targetMessage.mes?.substring(0, 200));
+            CarrotDebug.ui('Step 3: Detecting fullsheet in message...');
+            CarrotDebug.ui(`   Message length: ${targetMessage.mes?.length || 0} chars`);
+            CarrotDebug.ui(`   Message preview:`, targetMessage.mes?.substring(0, 200));
 
             const fullsheetInfo = fullsheetAPI.detectFullsheetInMessage(targetMessage.mes);
 
-            console.log('Step 4: Fullsheet detection result:');
+            CarrotDebug.ui('Step 4: Fullsheet detection result:');
             if (fullsheetInfo) {
-                console.log('✅ FULLSHEET DETECTED!');
-                console.log('   Character:', fullsheetInfo.characterName);
-                console.log('   Section count:', fullsheetInfo.sectionCount);
-                console.log('   Content length:', fullsheetInfo.content.length);
+                CarrotDebug.ui('✅ FULLSHEET DETECTED!');
+                CarrotDebug.ui('   Character:', fullsheetInfo.characterName);
+                CarrotDebug.ui('   Section count:', fullsheetInfo.sectionCount);
+                CarrotDebug.ui('   Content length:', fullsheetInfo.content.length);
             } else {
-                console.log('❌ NOT A FULLSHEET');
-                console.log('   Possible reasons:');
-                console.log('   - Message too short (< 5000 chars)');
-                console.log('   - Missing SECTION headers (need at least 3)');
-                console.log('   - Missing BunnymoTags');
+                CarrotDebug.ui('❌ NOT A FULLSHEET');
+                CarrotDebug.ui('   Possible reasons:');
+                CarrotDebug.ui('   - Message too short (< 5000 chars)');
+                CarrotDebug.ui('   - Missing SECTION headers (need at least 3)');
+                CarrotDebug.ui('   - Missing BunnymoTags');
                 return;
             }
 
-            console.log('Step 5: Showing confirmation dialog...');
+            CarrotDebug.ui('Step 5: Showing confirmation dialog...');
 
             // Ask user if they want to vectorize
             const shouldVectorize = confirm(
@@ -4042,7 +4040,7 @@ function initialize_baby_bunny_message_button() {
             );
 
             if (shouldVectorize) {
-                console.log('✅ User confirmed - starting vectorization...');
+                CarrotDebug.ui('✅ User confirmed - starting vectorization...');
                 toastr.info('🔬 Vectorizing fullsheet...', 'RAG System', { timeOut: 3000 });
 
                 const success = await fullsheetAPI.vectorizeFullsheetFromMessage(
@@ -4058,37 +4056,37 @@ function initialize_baby_bunny_message_button() {
                     );
                 }
             } else {
-                console.log('❌ User declined vectorization');
+                CarrotDebug.ui('❌ User declined vectorization');
             }
         } catch (error) {
-            console.error('❌ Error checking for fullsheet vectorization:', error);
-            console.error('   Error stack:', error.stack);
+            CarrotDebug.error('❌ Error checking for fullsheet vectorization:', error);
+            CarrotDebug.error('   Error stack:', error.stack);
         }
 
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+        CarrotDebug.ui('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     });
 }
 
 // Add Baby Bunny button to specific message (for MESSAGE_RENDERED events)
 function add_baby_bunny_button_to_message(messageId) {
-    console.log(`🐰 Adding button to message ${messageId}`);
+    CarrotDebug.ui(`🐰 Adding button to message ${messageId}`);
 
     // Find the specific message by mesid attribute
     const messageElement = $(`.mes[mesid="${messageId}"]`);
     if (messageElement.length === 0) {
-        console.log(`🐰 Message ${messageId} not found in DOM`);
+        CarrotDebug.ui(`🐰 Message ${messageId} not found in DOM`);
         return;
     }
 
     const extraButtons = messageElement.find('.mes_buttons .extraMesButtons');
     if (extraButtons.length === 0) {
-        console.log(`🐰 No extraMesButtons found in message ${messageId}`);
+        CarrotDebug.ui(`🐰 No extraMesButtons found in message ${messageId}`);
         return;
     }
 
     // Check if button already exists
     if (extraButtons.find(`.${baby_bunny_button_class}`).length > 0) {
-        console.log(`🐰 Button already exists in message ${messageId}`);
+        CarrotDebug.ui(`🐰 Button already exists in message ${messageId}`);
         return;
     }
 
@@ -4100,15 +4098,15 @@ function add_baby_bunny_button_to_message(messageId) {
     </div>`;
     extraButtons.prepend(html);
 
-    console.log(`🐰 ✅ Button added to message ${messageId}`);
+    CarrotDebug.ui(`🐰 ✅ Button added to message ${messageId}`);
 }
 
 // Add Baby Bunny buttons to all existing messages (called on extension load)
 function add_baby_bunny_buttons_to_all_existing_messages() {
-    console.log('🐰 Adding Baby Bunny buttons to all existing messages...');
+    CarrotDebug.ui('🐰 Adding Baby Bunny buttons to all existing messages...');
 
     const allMessages = $("#chat .mes");
-    console.log(`🐰 Found ${allMessages.length} existing messages to process`);
+    CarrotDebug.ui(`🐰 Found ${allMessages.length} existing messages to process`);
 
     let addedCount = 0;
     allMessages.each(function() {
@@ -4119,18 +4117,18 @@ function add_baby_bunny_buttons_to_all_existing_messages() {
         }
     });
 
-    console.log(`🐰 ✅ Added Baby Bunny buttons to ${addedCount} existing messages`);
+    CarrotDebug.ui(`🐰 ✅ Added Baby Bunny buttons to ${addedCount} existing messages`);
 }
 
 // Remove all Baby Bunny buttons from messages
 function remove_all_baby_bunny_buttons() {
-    console.log('🐰 Removing all Baby Bunny buttons...');
+    CarrotDebug.ui('🐰 Removing all Baby Bunny buttons...');
 
     const buttons = $(`.${baby_bunny_button_class}`);
     const count = buttons.length;
     buttons.remove();
 
-    console.log(`🐰 ✅ Removed ${count} Baby Bunny buttons`);
+    CarrotDebug.ui(`🐰 ✅ Removed ${count} Baby Bunny buttons`);
 }
 
 
@@ -4149,3 +4147,4 @@ export {
     closeBabyBunnyTutorial,
     baby_bunny_button_class
 };
+

@@ -96,13 +96,13 @@ async function loadFullsheetRAG() {
             regenerateChunkKeywords: module.regenerateChunkKeywords || (() => Promise.resolve()),
             applyAutomaticLinks: module.applyAutomaticLinks || (() => {}),
             updateChunksInLibrary: module.updateChunksInLibrary || ((collectionId, chunks) => {
-                console.warn('updateChunksInLibrary not implemented in fullsheet-rag.js');
+                CarrotDebug.error('updateChunksInLibrary not implemented in fullsheet-rag.js');
                 return Promise.resolve();
             }),
         };
         return fullsheetAPI;
     } catch (error) {
-        console.error('CarrotKernel: Error loading fullsheet-rag.js', error);
+        CarrotDebug.error('CarrotKernel: Error loading fullsheet-rag.js', error);
         return {};
     }
 }
@@ -161,7 +161,7 @@ async function vectorizeFullsheetFromMessage(characterName, content) {
             if (globalThis.CarrotKernelFullsheetRag?.generateCollectionId) {
                 const collectionId = globalThis.CarrotKernelFullsheetRag.generateCollectionId(characterName);
                 await setCollectionName(collectionId, customName.trim());
-                console.log(`🥕 Set custom name "${customName.trim()}" for collection ${collectionId}`);
+                CarrotDebug.ui(`Set custom name "${customName.trim()}" for collection ${collectionId}`);
             }
         }
     }
@@ -412,8 +412,10 @@ function detectSheetCommand(messageText) {
     
     const sheetCommands = [
         { command: '!fullsheet', type: 'fullsheet' },
-        { command: '!tagsheet', type: 'tagsheet' }, 
-        { command: '!quicksheet', type: 'quicksheet' }
+        { command: '!tagsheet', type: 'tagsheet' },
+        { command: '!quicksheet', type: 'quicksheet' },
+        { command: '!memsheet', type: 'memsheet' },
+        { command: '!updatesheet', type: 'updatesheet' }
     ];
     
     for (const { command, type } of sheetCommands) {
@@ -436,15 +438,11 @@ function detectSheetCommand(messageText) {
 
 // Process sheet command and generate appropriate injection
 async function processSheetCommand(sheetData) {
-    if (extension_settings[extensionName]?.debugMode) {
-        console.log('🥕 SHEET COMMAND DEBUG: processSheetCommand called with:', sheetData);
-    }
+    CarrotDebug.inject('processSheetCommand called with:', sheetData);
 
     const { type, entry } = sheetData;
 
-    if (extension_settings[extensionName]?.debugMode) {
-        console.log('🥕 SHEET COMMAND DEBUG: Processing sheet command type:', type);
-    }
+    CarrotDebug.inject('Processing sheet command type:', type);
 
     CarrotDebug.inject('Processing sheet command', {
         type: type,
@@ -457,15 +455,19 @@ async function processSheetCommand(sheetData) {
     // Create simple, effective mandatory prompt without duplicating macro content
     const sheetTypeMap = {
         'fullsheet': 'FULLSHEET',
-        'tagsheet': 'TAGSHEET', 
-        'quicksheet': 'QUICKSHEET'
+        'tagsheet': 'TAGSHEET',
+        'quicksheet': 'QUICKSHEET',
+        'memsheet': 'MEMSHEET',
+        'updatesheet': 'UPDATESHEET'
     };
     
     // Get the appropriate injection template
     const templateCategoryMap = {
         'fullsheet': 'BunnyMo Fullsheet Injection',
-        'tagsheet': 'BunnyMo Tagsheet Injection', 
-        'quicksheet': 'BunnyMo Quicksheet Injection'
+        'tagsheet': 'BunnyMo Tagsheet Injection',
+        'quicksheet': 'BunnyMo Quicksheet Injection',
+        'memsheet': 'BunnyMo Memsheet Injection',
+        'updatesheet': 'BunnyMo Updatesheet Injection'
     };
     
     const injectionTemplate = CarrotTemplateManager.getPrimaryTemplateForCategory(templateCategoryMap[type]);
@@ -483,7 +485,7 @@ async function processSheetCommand(sheetData) {
         depth = injectionTemplate.depth !== undefined ? injectionTemplate.depth : (injectionTemplate.settings?.inject_depth || 4);
         role = injectionTemplate.role || 'system';
 
-        console.log('🥕 SHEET COMMAND DEBUG: Using template settings:', {
+        CarrotDebug.inject('Using template settings:', {
             templateName: injectionTemplate.name,
             depth: depth,
             role: role,
@@ -494,7 +496,7 @@ async function processSheetCommand(sheetData) {
         // Fallback to default fancy format and global settings
         depth = settings.injectionDepth || 4;
         role = settings.injectionRole || 'system';
-        
+
         injectionText = `🚨 **MANDATORY OOC OVERRIDE** 🚨
 
 **SYSTEM DIRECTIVE:** A !${sheetTypeMap[type]} command has been detected and must be executed immediately.
@@ -506,8 +508,8 @@ async function processSheetCommand(sheetData) {
 • **RESUME** normal roleplay only after completing this request
 
 **PRIORITY:** CRITICAL - This system command takes precedence over all ongoing narrative.`;
-        
-        console.log('🥕 SHEET COMMAND DEBUG: Using fallback settings:', {
+
+        CarrotDebug.inject('Using fallback settings:', {
             depth: depth,
             role: role
         });
@@ -600,6 +602,7 @@ const defaultSettings = {
     enabled: true,
     selectedLorebooks: [],
     characterRepoBooks: [],
+    tagLibraries: [],
     displayMode: 'thinking', // 'none', 'thinking', 'cards'
     autoExpand: false,
     sendToAI: true,
@@ -665,10 +668,10 @@ function initializeSettings() {
                           typeof extension_settings[extensionName] === 'object';
 
     if (!settingsExist) {
-        console.log('🥕 CarrotKernel: Initializing settings for the first time');
+        // Initialization is silent - no logs needed
         extension_settings[extensionName] = { ...defaultSettings };
     } else {
-        console.log('🥕 CarrotKernel: Loading existing settings from storage');
+        // Loading existing settings - silent
     }
 
     // Note: We no longer auto-reset templates to preserve user modifications
@@ -723,10 +726,18 @@ function initializeSettings() {
         });
     }
 
+    // After loading tag libraries, wrap them if bunnymoTagWrapping is enabled
+    // (deferred to avoid blocking initialization)
+    if (extension_settings[extensionName].bunnymoTagWrapping && tagLibraries.size > 0) {
+        setTimeout(() => {
+            wrapExistingTagLibraries();
+        }, 1000);
+    }
+
     // Log cleanup if any invalid entries were found
     const totalCleaned = invalidSelectedBooks.length + invalidCharRepos.length + invalidTagLibs.length;
     if (totalCleaned > 0) {
-        console.log('🥕 CarrotKernel: Cleaned up lorebooks that no longer exist:', {
+        CarrotDebug.scan('Cleaned up lorebooks that no longer exist:', {
             invalidSelectedBooks,
             invalidCharRepos,
             invalidTagLibs
@@ -764,52 +775,25 @@ function saveSettings() {
 }
 
 // Parse BunnymoTags blocks from lorebook entries
+// Only called for Character Repos, not Tag Libraries
 function extractBunnyMoCharacters(entry, lorebookName) {
     const characters = [];
     const content = entry.content || '';
-    
-    CarrotDebug.scan(`Parsing entry in ${lorebookName}`, {
-        entryKey: entry.key,
-        entryComment: entry.comment,
-        contentPreview: content.substring(0, 200) + '...',
-        contentLength: content.length
-    });
-    
-    // Look for <BunnymoTags> blocks
+
+    // Look for <BunnymoTags> blocks (character sheets)
     const bunnyMoMatches = content.match(/<BunnymoTags>(.*?)<\/BunnymoTags>/gs);
-    
+
     if (bunnyMoMatches) {
-        CarrotDebug.scan(`Found ${bunnyMoMatches.length} BunnymoTags blocks`, {
-            matches: bunnyMoMatches.map(m => m.substring(0, 100) + '...')
-        });
-        
         bunnyMoMatches.forEach(match => {
             const tagContent = match.replace(/<\/?BunnymoTags>/g, '');
             const character = parseBunnyMoTagBlock(tagContent, lorebookName);
-            
+
             if (character) {
                 characters.push(character);
-                CarrotDebug.scan(`Found character: ${character.name}`, {
-                    lorebook: lorebookName,
-                    tags: character.tags,
-                    tagCount: character.tags.size,
-                    categories: Array.from(character.tags.keys())
-                });
-            } else {
-                CarrotDebug.error(`Failed to parse character from tags`, {
-                    tagContent: tagContent,
-                    lorebook: lorebookName
-                });
             }
         });
-    } else {
-        CarrotDebug.scan(`No BunnymoTags blocks found in entry`, {
-            entryKey: entry.key,
-            searchedFor: '<BunnymoTags>...</BunnymoTags>',
-            contentSample: content.substring(0, 500)
-        });
     }
-    
+
     return characters;
 }
 
@@ -821,14 +805,11 @@ function parseBunnyMoTagBlock(tagContent, lorebookName) {
 
     let characterName = null;
     const tagMap = new Map();
-    let parsedCount = 0;
 
     matches.forEach(match => {
         const [, tagType, tagValue] = match;
         const cleanType = tagType.trim().toUpperCase();
         const cleanValue = tagValue.trim().toUpperCase().replace(/_/g, ' ');
-
-        parsedCount++;
 
         if (cleanType === 'NAME') {
             characterName = cleanValue.replace(/_/g, ' ');
@@ -847,40 +828,280 @@ function parseBunnyMoTagBlock(tagContent, lorebookName) {
         }
     });
 
-    // Single consolidated debug output
-    CarrotDebug.scan(`📝 Parsed BunnymoTags block`, {
-        lorebook: lorebookName,
-        totalMatches: matches.length,
-        parsedSuccessfully: parsedCount,
-        character: characterName,
-        categories: tagMap.size,
-        categoryNames: Array.from(tagMap.keys())
-    });
-
     if (characterName && tagMap.size > 0) {
-        const result = {
+        return {
             name: characterName,
             tags: tagMap,
             source: lorebookName
         };
-
-        CarrotDebug.scan(`🎉 CHARACTER PARSED SUCCESSFULLY`, {
-            name: characterName,
-            tagCount: tagMap.size,
-            categories: Array.from(tagMap.keys()),
-            sampleTags: Array.from(tagMap.entries()).slice(0, 3).map(([k, v]) => `${k}: ${Array.from(v).join(', ')}`)
-        });
-
-        return result;
     }
 
-    CarrotDebug.error(`❌ FAILED TO PARSE CHARACTER`, {
-        hadName: !!characterName,
-        tagCount: tagMap.size,
-        content: tagContent.substring(0, 200)
-    });
-
     return null;
+}
+
+// =============================================================================
+// BUNNYMO TAG WRAPPING - File-level lorebook modification
+// =============================================================================
+
+/**
+ * Create a backup of a lorebook before modification
+ */
+async function backupLorebook(lorebookName) {
+    try {
+        const backupName = `${lorebookName}.carrot_backup`;
+
+        // Check if backup already exists
+        if (world_names.includes(backupName)) {
+            CarrotDebug.scan(`Backup already exists for ${lorebookName}, skipping`);
+            return true;
+        }
+
+        const lorebook = await loadWorldInfo(lorebookName);
+        if (!lorebook) {
+            CarrotDebug.error(`Cannot backup lorebook: ${lorebookName} not found`);
+            return false;
+        }
+
+        await saveWorldInfo(backupName, lorebook, true);
+        CarrotDebug.repo(`✅ Backed up lorebook: ${lorebookName} → ${backupName}`);
+        return true;
+    } catch (error) {
+        CarrotDebug.error(`Failed to backup lorebook ${lorebookName}:`, error);
+        return false;
+    }
+}
+
+/**
+ * Automatically wrap existing tag libraries on load (if not already wrapped)
+ */
+async function wrapExistingTagLibraries() {
+    if (!extension_settings[extensionName].bunnymoTagWrapping) {
+        return;
+    }
+
+    const tagLibsList = Array.from(tagLibraries);
+    if (tagLibsList.length === 0) {
+        return;
+    }
+
+    CarrotDebug.repo(`🔄 Checking ${tagLibsList.length} tag libraries for wrapping...`);
+
+    for (const lorebookName of tagLibsList) {
+        try {
+            // Load the lorebook to check if it needs wrapping
+            const lorebook = await loadWorldInfo(lorebookName);
+            if (!lorebook) {
+                continue;
+            }
+
+            // Get entries
+            let entries = [];
+            if (Array.isArray(lorebook.entries)) {
+                entries = lorebook.entries;
+            } else if (lorebook.entries && typeof lorebook.entries === 'object') {
+                entries = Object.values(lorebook.entries);
+            }
+
+            if (entries.length === 0) {
+                continue;
+            }
+
+            // Check if any entry needs wrapping
+            let needsWrapping = false;
+            for (const entry of entries) {
+                if (!entry.content || !entry.content.trim()) {
+                    continue;
+                }
+
+                const entryName = (entry.comment || entry.key?.[0] || 'Entry').replace(/[<>]/g, '');
+                const expectedWrapper = `<BunnymoTags:${entryName}>`;
+
+                // If any entry is not wrapped, the lorebook needs wrapping
+                if (!entry.content.trim().startsWith(expectedWrapper)) {
+                    needsWrapping = true;
+                    break;
+                }
+            }
+
+            // Wrap if needed
+            if (needsWrapping) {
+                CarrotDebug.repo(`📦 Wrapping tag library: ${lorebookName}`);
+                await wrapLorebookEntries(lorebookName);
+            } else {
+                CarrotDebug.scan(`✓ Tag library already wrapped: ${lorebookName}`);
+            }
+        } catch (error) {
+            CarrotDebug.error(`Failed to check/wrap ${lorebookName}:`, error);
+        }
+    }
+
+    CarrotDebug.repo(`✅ Finished checking tag libraries for wrapping`);
+}
+
+/**
+ * Wrap all entries in a tag library with BunnymoTags
+ */
+export async function wrapLorebookEntries(lorebookName) {
+    try {
+        // Create backup first
+        const backed = await backupLorebook(lorebookName);
+        if (!backed) {
+            toastr.error(`Failed to backup ${lorebookName}. Wrapping cancelled.`);
+            return false;
+        }
+
+        // Load the lorebook
+        const lorebook = await loadWorldInfo(lorebookName);
+        if (!lorebook) {
+            CarrotDebug.error(`Cannot wrap entries: ${lorebookName} not found`);
+            return false;
+        }
+
+        // ST's worldbook structure: .entries can be array OR object with numeric keys
+        let entries = [];
+        if (Array.isArray(lorebook.entries)) {
+            entries = lorebook.entries;
+        } else if (lorebook.entries && typeof lorebook.entries === 'object') {
+            // Convert object with numeric keys to array
+            entries = Object.values(lorebook.entries);
+        }
+
+        if (entries.length === 0) {
+            CarrotDebug.error(`Cannot wrap entries: ${lorebookName} has no entries`, {
+                lorebookKeys: Object.keys(lorebook),
+                entriesType: typeof lorebook.entries,
+                isArray: Array.isArray(lorebook.entries)
+            });
+            return false;
+        }
+
+        let wrappedCount = 0;
+        let skippedCount = 0;
+
+        // Wrap each entry
+        for (const entry of entries) {
+            if (!entry.content || !entry.content.trim()) {
+                skippedCount++;
+                continue;
+            }
+
+            const entryName = (entry.comment || entry.key?.[0] || 'Entry').replace(/[<>]/g, '');
+            const expectedWrapper = `<BunnymoTags:${entryName}>`;
+
+            // Check if already wrapped with this exact wrapper
+            if (entry.content.trim().startsWith(expectedWrapper)) {
+                CarrotDebug.scan(`Entry "${entryName}" already wrapped, skipping`);
+                skippedCount++;
+                continue;
+            }
+
+            // Wrap the content
+            entry.content = `<BunnymoTags:${entryName}>\n${entry.content}\n</BunnymoTags:${entryName}>`;
+            wrappedCount++;
+        }
+
+        // Save the modified lorebook
+        await saveWorldInfo(lorebookName, lorebook, true);
+
+        CarrotDebug.repo(`🏷️ Wrapped ${wrappedCount} entries in ${lorebookName} (${skippedCount} skipped)`);
+        toastr.success(`Wrapped ${wrappedCount} entries in ${lorebookName}`);
+
+        // Reload worldbook list to reflect changes
+        if (typeof loadWorldInfoList === 'function') {
+            loadWorldInfoList();
+        }
+
+        return true;
+    } catch (error) {
+        CarrotDebug.error(`Failed to wrap lorebook ${lorebookName}:`, error);
+        toastr.error(`Failed to wrap ${lorebookName}: ${error.message}`);
+        return false;
+    }
+}
+
+/**
+ * Unwrap all entries in a tag library (remove BunnymoTags)
+ */
+export async function unwrapLorebookEntries(lorebookName) {
+    try {
+        // Create backup first
+        const backed = await backupLorebook(lorebookName);
+        if (!backed) {
+            toastr.error(`Failed to backup ${lorebookName}. Unwrapping cancelled.`);
+            return false;
+        }
+
+        // Load the lorebook
+        const lorebook = await loadWorldInfo(lorebookName);
+        if (!lorebook) {
+            CarrotDebug.error(`Cannot unwrap entries: ${lorebookName} not found`);
+            return false;
+        }
+
+        // ST's worldbook structure: .entries can be array OR object with numeric keys
+        let entries = [];
+        if (Array.isArray(lorebook.entries)) {
+            entries = lorebook.entries;
+        } else if (lorebook.entries && typeof lorebook.entries === 'object') {
+            // Convert object with numeric keys to array
+            entries = Object.values(lorebook.entries);
+        }
+
+        if (entries.length === 0) {
+            CarrotDebug.error(`Cannot unwrap entries: ${lorebookName} has no entries`, {
+                lorebookKeys: Object.keys(lorebook),
+                entriesType: typeof lorebook.entries,
+                isArray: Array.isArray(lorebook.entries)
+            });
+            return false;
+        }
+
+        let unwrappedCount = 0;
+        let skippedCount = 0;
+
+        // Unwrap each entry
+        for (const entry of entries) {
+            if (!entry.content || !entry.content.trim()) {
+                skippedCount++;
+                continue;
+            }
+
+            const entryName = (entry.comment || entry.key?.[0] || 'Entry').replace(/[<>]/g, '');
+            const expectedWrapper = `<BunnymoTags:${entryName}>`;
+            const expectedClosing = `</BunnymoTags:${entryName}>`;
+
+            // Check if wrapped with this exact wrapper
+            const trimmedContent = entry.content.trim();
+            if (trimmedContent.startsWith(expectedWrapper) && trimmedContent.endsWith(expectedClosing)) {
+                // Remove the wrapper
+                let unwrapped = entry.content.replace(expectedWrapper, '').replace(expectedClosing, '');
+                // Trim excess newlines that were added during wrapping
+                unwrapped = unwrapped.replace(/^\n+/, '').replace(/\n+$/, '');
+                entry.content = unwrapped;
+                unwrappedCount++;
+            } else {
+                CarrotDebug.scan(`Entry "${entryName}" not wrapped or has different wrapper, skipping`);
+                skippedCount++;
+            }
+        }
+
+        // Save the modified lorebook
+        await saveWorldInfo(lorebookName, lorebook, true);
+
+        CarrotDebug.repo(`🏷️ Unwrapped ${unwrappedCount} entries in ${lorebookName} (${skippedCount} skipped)`);
+        toastr.success(`Unwrapped ${unwrappedCount} entries in ${lorebookName}`);
+
+        // Reload worldbook list to reflect changes
+        if (typeof loadWorldInfoList === 'function') {
+            loadWorldInfoList();
+        }
+
+        return true;
+    } catch (error) {
+        CarrotDebug.error(`Failed to unwrap lorebook ${lorebookName}:`, error);
+        toastr.error(`Failed to unwrap ${lorebookName}: ${error.message}`);
+        return false;
+    }
 }
 
 // Scan selected lorebooks for character data
@@ -919,18 +1140,22 @@ async function scanSelectedLorebooks(lorebookNames, targetCharacterName = null) 
                 continue;
             }
 
-            // Context-aware: Scan ALL lorebooks for character data, not just marked repos
+            // ONLY scan Character Repos for character data
+            // Tag Libraries contain tags/traits, not character sheets
+            if (!isMarkedAsCharacterRepo) {
+                if (isMarkedAsTagLibrary) {
+                    tagLibrariesScanned++;
+                    CarrotDebug.lorebook(lorebookName, 'tag-library', lorebook.entries?.length || 0);
+                }
+                continue;
+            }
+
+            // Extract character data from BunnymoTags blocks in Character Repos only
             let foundCharactersInThisBook = false;
 
-            // Extract character data from BunnymoTags blocks in all enabled lorebooks
             Object.values(lorebook.entries).forEach(entry => {
-                // Skip disabled entries
+                // Skip disabled entries (silent - no logging needed)
                 if (entry.disable) {
-                    CarrotDebug.scan(`Skipping disabled entry`, {
-                        key: entry.key,
-                        comment: entry.comment,
-                        lorebook: lorebookName
-                    });
                     return;
                 }
 
@@ -938,7 +1163,6 @@ async function scanSelectedLorebooks(lorebookNames, targetCharacterName = null) 
                 characters.forEach(char => {
                     // VALIDATION: Filter out non-character entries (metadata, lorebook names, etc.)
                     if (!isValidCharacterName(char.name)) {
-                        CarrotDebug.scan(`🚫 Filtered non-character entry: ${char.name}`);
                         return;
                     }
 
@@ -952,11 +1176,10 @@ async function scanSelectedLorebooks(lorebookNames, targetCharacterName = null) 
                             scannedCharacters.set(char.name, char);
                             foundCharacters.push(char.name);
                             foundCharactersInThisBook = true;
-                            CarrotDebug.scan(`✅ Loaded character data for: ${char.name}`);
+                            CarrotDebug.repo(`✅ Loaded character: ${char.name} from ${lorebookName}`);
                         }
-                    } else {
-                        CarrotDebug.scan(`⏭️  Skipped character (not current context): ${char.name}`);
                     }
+                    // No logging for skipped characters - too spammy
                 });
             });
 
@@ -1179,11 +1402,26 @@ async function injectCharacterData(activeCharacters) {
         if (characterDataArray.length > 0) {
             if (characterDataArray.length === 1) {
                 // Single character - process directly
-                injectionText = CarrotTemplateManager.processTemplate(currentTemplate, characterDataArray[0]);
+                injectionText = await CarrotTemplateManager.processTemplate(currentTemplate, characterDataArray[0]);
             } else {
                 // Multiple characters - pass array directly to new template system
-                injectionText = CarrotTemplateManager.processTemplate(currentTemplate, characterDataArray);
+                injectionText = await CarrotTemplateManager.processTemplate(currentTemplate, characterDataArray);
             }
+        }
+
+        // Ensure injectionText is a string (template might return array/object)
+        if (typeof injectionText !== 'string') {
+            if (Array.isArray(injectionText)) {
+                injectionText = injectionText.join('\n');
+            } else if (injectionText && typeof injectionText === 'object') {
+                injectionText = JSON.stringify(injectionText, null, 2);
+            } else {
+                injectionText = String(injectionText || '');
+            }
+            CarrotDebug.inject('⚠️ Template returned non-string, converted to string', {
+                originalType: typeof injectionText,
+                isArray: Array.isArray(injectionText)
+            });
         }
     } else {
         // Fallback to original format if no template
@@ -1926,18 +2164,14 @@ function displayCharacterData(injectedCharacters) {
     
     let renderedContent = '';
     if (settings.displayMode === 'thinking') {
-        if (extension_settings[extensionName]?.debugMode) {
-            console.log('🧠 CARROT DEBUG: About to call renderAsThinkingBox with:', injectedCharacters);
-        }
+        CarrotDebug.ui('About to call renderAsThinkingBox with:', injectedCharacters);
         CarrotDebug.ui('🧠 DISPLAY: Rendering thinking box');
         renderedContent = renderAsThinkingBox(injectedCharacters);
-        if (extension_settings[extensionName]?.debugMode) {
-            console.log('🧠 CARROT DEBUG: renderAsThinkingBox returned:', {
-                contentLength: renderedContent?.length,
-                hasContent: !!renderedContent,
-                content: renderedContent
-            });
-        }
+        CarrotDebug.ui('renderAsThinkingBox returned:', {
+            contentLength: renderedContent?.length,
+            hasContent: !!renderedContent,
+            content: renderedContent
+        });
         CarrotDebug.ui('🧠 DISPLAY: Thinking box rendered', {
             contentLength: renderedContent?.length,
             hasContent: !!renderedContent
@@ -1955,17 +2189,15 @@ function displayCharacterData(injectedCharacters) {
         // Add to the last message
         const lastMessage = document.querySelector('#chat .mes:last-child');
         const allMessages = document.querySelectorAll('#chat .mes');
-        
-        if (extension_settings[extensionName]?.debugMode) {
-            console.log('🎯 CARROT DEBUG: DOM injection details:', {
-                contentLength: renderedContent.length,
-                lastMessageExists: !!lastMessage,
-                totalMessages: allMessages.length,
-                lastMessageId: lastMessage?.getAttribute('mesid'),
-                content: renderedContent.substring(0, 200) + '...'
-            });
-        }
-        
+
+        CarrotDebug.ui('DOM injection details:', {
+            contentLength: renderedContent.length,
+            lastMessageExists: !!lastMessage,
+            totalMessages: allMessages.length,
+            lastMessageId: lastMessage?.getAttribute('mesid'),
+            content: renderedContent.substring(0, 200) + '...'
+        });
+
         CarrotDebug.ui('🎯 DISPLAY: DOM selection results', {
             lastMessage: !!lastMessage,
             lastMessageId: lastMessage?.getAttribute('mesid'),
@@ -1994,13 +2226,9 @@ function displayCharacterData(injectedCharacters) {
             });
             
             if (mesText) {
-                if (extension_settings[extensionName]?.debugMode) {
-                    console.log('🎯 CARROT DEBUG: Inserting HTML before mesText element');
-                }
+                CarrotDebug.ui('Inserting HTML before mesText element');
                 mesText.insertAdjacentHTML('beforebegin', renderedContent);
-                if (extension_settings[extensionName]?.debugMode) {
-                    console.log('✅ CARROT DEBUG: HTML insertion completed, checking if element exists in DOM');
-                }
+                CarrotDebug.ui('HTML insertion completed, checking if element exists in DOM');
                 
                 // Ensure collapsible functionality works by adding event listeners
                 const characterDetails = lastMessage.querySelectorAll('details[style*="border"]');
@@ -2022,18 +2250,14 @@ function displayCharacterData(injectedCharacters) {
                 
                 // Verify the thinking block was actually added (look for CarrotKernel thinking class)
                 const insertedElement = lastMessage.querySelector('.carrot-thinking-details');
-                if (extension_settings[extensionName]?.debugMode) {
-                    console.log('🔍 CARROT DEBUG: Verification - ST-native thinking block element found:', !!insertedElement);
-                }
+                CarrotDebug.ui('Verification - ST-native thinking block element found:', !!insertedElement);
                 if (insertedElement) {
-                    if (extension_settings[extensionName]?.debugMode) {
-                        console.log('📏 CARROT DEBUG: Thinking block dimensions:', {
-                            offsetHeight: insertedElement.offsetHeight,
-                            offsetWidth: insertedElement.offsetWidth,
-                            display: getComputedStyle(insertedElement).display,
-                            visibility: getComputedStyle(insertedElement).visibility
-                        });
-                    }
+                    CarrotDebug.ui('Thinking block dimensions:', {
+                        offsetHeight: insertedElement.offsetHeight,
+                        offsetWidth: insertedElement.offsetWidth,
+                        display: getComputedStyle(insertedElement).display,
+                        visibility: getComputedStyle(insertedElement).visibility
+                    });
                     
                     // Mark the message as having CarrotKernel thinking content (separate from ST reasoning)
                     lastMessage.classList.add('carrot-thinking');
@@ -2085,7 +2309,7 @@ function displayCharacterData(injectedCharacters) {
                     characters: injectedCharacters
                 });
             } else {
-                console.error('❌ CARROT DEBUG: No .mes_text found in last message');
+                CarrotDebug.error('No .mes_text found in last message');
                 CarrotDebug.ui('❌ DISPLAY: No .mes_text found in last message');
             }
         } else {
@@ -2222,14 +2446,150 @@ function updateLorebookList() {
 
 // Removed storage system - processing immediately like BunnyMoTags
 
+/**
+ * Process Tag Library entries for template-based injections
+ * When Tag Library entries activate, check for associated templates and inject them
+ */
+async function processTagLibraryInjections(tagEntries) {
+    if (!tagEntries || tagEntries.length === 0) {
+        return;
+    }
+
+    CarrotDebug.inject(`🏷️ Starting Tag Library injection processing`, {
+        totalEntries: tagEntries.length,
+        entries: tagEntries.map(e => ({
+            world: e.world,
+            key: e.key,
+            comment: e.comment
+        }))
+    });
+
+    const settings = extension_settings[extensionName];
+
+    for (const entry of tagEntries) {
+        try {
+            // Extract tag name from entry
+            const tagName = entry.comment || entry.key?.[0] || 'Unknown';
+            const lorebookName = entry.world;
+
+            CarrotDebug.inject(`📋 Processing tag entry: "${tagName}" from ${lorebookName}`);
+
+            // Look for a template matching this tag entry
+            // Template name should match the entry name or have a trigger keyword
+            const matchingTemplate = findTemplateForEntry(entry);
+
+            if (matchingTemplate) {
+                CarrotDebug.inject(`✅ Found template for "${tagName}": ${matchingTemplate.name}`);
+
+                // Process template with entry data
+                const templateData = {
+                    entry: entry,
+                    tagName: tagName,
+                    content: entry.content,
+                    lorebookName: lorebookName,
+                    key: entry.key,
+                    comment: entry.comment
+                };
+
+                let injectionText = await CarrotTemplateManager.processTemplate(matchingTemplate, templateData);
+
+                // Ensure string output
+                if (typeof injectionText !== 'string') {
+                    injectionText = String(injectionText || '');
+                }
+
+                // Use template settings for injection
+                const depth = matchingTemplate.depth !== undefined ? matchingTemplate.depth : settings.injectionDepth || 4;
+                const role = matchingTemplate.role || settings.injectionRole || 'system';
+                const position = matchingTemplate.position || 'chat';
+
+                // Create unique ID for this injection
+                const injectionId = `carrot-tag-${lorebookName.replace(/[^a-zA-Z0-9]/g, '_')}-${tagName.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+                const injectionCommand = `/inject id=${injectionId} position=${position} ephemeral=true scan=true depth=${depth} role=${role} ${injectionText}`;
+
+                CarrotDebug.inject(`💉 Executing tag injection`, {
+                    tagName: tagName,
+                    templateName: matchingTemplate.name,
+                    depth: depth,
+                    role: role,
+                    position: position,
+                    injectionSize: injectionText.length
+                });
+
+                await executeSlashCommandsWithOptions(injectionCommand, { displayCommand: false, showOutput: false });
+
+                CarrotDebug.inject(`✅ Tag injection successful: ${tagName}`);
+            } else {
+                CarrotDebug.inject(`⏭️ No template found for "${tagName}"`);
+            }
+        } catch (error) {
+            CarrotDebug.error(`❌ Failed to process tag entry injection:`, {
+                entry: entry,
+                error: error.message,
+                stack: error.stack
+            });
+        }
+    }
+
+    CarrotDebug.inject(`✅ Completed Tag Library injection processing`);
+}
+
+/**
+ * Find a template that matches a lorebook entry
+ * Checks template name, triggers, and categories
+ */
+function findTemplateForEntry(entry) {
+    const entryName = (entry.comment || entry.key?.[0] || '').toLowerCase();
+    const lorebookName = (entry.world || '').toLowerCase();
+
+    const allTemplates = Object.values(CarrotTemplateManager.getTemplates());
+
+    // Try to find matching template
+    for (const template of allTemplates) {
+        const templateName = (template.name || '').toLowerCase();
+
+        // Check if template name matches entry name
+        if (templateName.includes(entryName) || entryName.includes(templateName)) {
+            return template;
+        }
+
+        // Check if template has triggers that match
+        if (template.triggers && Array.isArray(template.triggers)) {
+            for (const trigger of template.triggers) {
+                const triggerLower = trigger.toLowerCase();
+                if (entryName.includes(triggerLower) || lorebookName.includes(triggerLower)) {
+                    return template;
+                }
+            }
+        }
+
+        // Check if template category suggests it's for this type of entry
+        if (template.category) {
+            const categoryLower = template.category.toLowerCase();
+            if (categoryLower.includes('tag') && categoryLower.includes('injection')) {
+                // Generic tag injection template - could be used as fallback
+                // But keep looking for more specific match
+                continue;
+            }
+        }
+    }
+
+    // No matching template found
+    return null;
+}
+
 // Process activated lorebook entries (triggered when ST activates lorebook entries)
 async function processActivatedLorebookEntries(entryList) {
     const settings = extension_settings[extensionName];
-    
+
     if (!settings.enabled || !entryList || entryList.length === 0) {
         return;
     }
-    
+
+    // BunnymoTags Wrapping is now handled at file-level when marking as tag library
+    // No runtime wrapping needed - entries are already wrapped in the lorebook files
+
     CarrotDebug.startTimer('process-activated-entries', 'SCAN');
     CarrotDebug.scan('🎯 PROCESSING ACTIVATED LOREBOOK ENTRIES', {
         totalEntries: entryList.length,
@@ -2241,42 +2601,38 @@ async function processActivatedLorebookEntries(entryList) {
     // Find activated character repository entries
     const activatedCharacters = [];
     
-    // Filter for character entries from selected character repos (exactly like BunnyMoTags)
+    // Separate character repo entries and tag library entries
     const characterRepoBooksList = Array.from(characterRepoBooks);
-    CarrotDebug.scan(`🔍 DEBUG: Character repo books configured: ${JSON.stringify(characterRepoBooksList)}`);
-    
-    // Debug: Check if we have any lorebooks scanned at all
-    CarrotDebug.scan(`🔍 DEBUG: Current state`, {
-        selectedLorebooks: Array.from(selectedLorebooks),
-        characterRepoBooks: Array.from(characterRepoBooks),
-        scannedCharacters: scannedCharacters.size,
-        scannedCharacterNames: Array.from(scannedCharacters.keys())
+    const tagLibrariesList = Array.from(tagLibraries);
+
+    CarrotDebug.scan(`🔍 Processing activated entries`, {
+        totalEntries: entryList.length,
+        characterRepos: characterRepoBooksList,
+        tagLibraries: tagLibrariesList
     });
-    
-    // Log all activated entries for debugging
-    entryList.forEach((entry, index) => {
-        CarrotDebug.scan(`📋 Entry ${index + 1}/${entryList.length}`, {
-            world: entry.world,
-            key: entry.key,
-            comment: entry.comment,
-            title: entry.title,
-            content: entry.content?.substring(0, 100) + '...',
-            isCharacterRepo: characterRepoBooksList.includes(entry.world),
-            isInSelectedLorebooks: selectedLorebooks.has(entry.world)
-        });
-    });
-    
+
+    // Filter for character entries from Character Repos
     const characterEntries = entryList.filter(entry => {
-        // Check if this entry is from a selected character repository
-        const isFromCharacterRepo = characterRepoBooksList.includes(entry.world);
-        
-        if (isFromCharacterRepo) {
-            CarrotDebug.scan(`✅ Character entry activated by WorldInfo: ${entry.comment || entry.key?.[0]} from ${entry.world}`);
-            return true;
-        }
-        return false;
+        return characterRepoBooksList.includes(entry.world);
     });
-    
+
+    // Filter for tag entries from Tag Libraries
+    const tagLibraryEntries = entryList.filter(entry => {
+        return tagLibrariesList.includes(entry.world);
+    });
+
+    CarrotDebug.scan(`📊 Entry breakdown`, {
+        characterRepoEntries: characterEntries.length,
+        tagLibraryEntries: tagLibraryEntries.length
+    });
+
+    // Process Tag Library entries for template-based injections
+    if (tagLibraryEntries.length > 0) {
+        CarrotDebug.inject(`🏷️ Processing ${tagLibraryEntries.length} Tag Library entries for template injections`);
+        await processTagLibraryInjections(tagLibraryEntries);
+    }
+
+    // Early return if no character repo entries
     if (characterEntries.length === 0) {
         CarrotDebug.scan('No character repository entries were activated');
         return;
@@ -2345,9 +2701,7 @@ async function processActivatedLorebookEntries(entryList) {
             // Store character data for thinking blocks when AI message is rendered
             const characterNames = characterData.map(char => char.name);
             pendingThinkingBlockData = characterNames;
-            if (extension_settings[extensionName]?.debugMode) {
-                console.log('🧠 CARROT DEBUG: Storing thinking block data:', characterNames);
-            }
+            CarrotDebug.ui('Storing thinking block data:', characterNames);
             CarrotDebug.ui('🧠 THINKING MODE: Stored character data for later display', {
                 characterNames,
                 pendingThinkingBlockDataLength: pendingThinkingBlockData.length
@@ -2376,26 +2730,22 @@ function extractCharacterDataFromEntry(entry) {
         characterName = babyBunnyMatch[1].trim();
     }
 
-    if (extension_settings[extensionName]?.debugMode) {
-        console.log('🔍 CARROT DEBUG: Extracting character from entry:', {
-            entryComment: entry.comment,
-            entryKey: entry.key,
-            extractedName: characterName,
-            entryTitle: entry.title || entry.comment
-        });
-    }
-    
+    CarrotDebug.scan('Extracting character from entry:', {
+        entryComment: entry.comment,
+        entryKey: entry.key,
+        extractedName: characterName,
+        entryTitle: entry.title || entry.comment
+    });
+
     const character = {
         name: characterName,
         tags: {},
         source: entry.world,
         uid: entry.uid
     };
-    
+
     // Parse BunnyMoTags from the entry content (FIX: correct case-sensitive matching)
-    if (extension_settings[extensionName]?.debugMode) {
-        console.log('🔍 CARROT DEBUG: Entry content preview:', entry.content.substring(0, 200));
-    }
+    CarrotDebug.scan('Entry content preview:', entry.content.substring(0, 200));
     
     // Try both case variations to be safe
     const bunnyTagsMatch = entry.content.match(/<BunnyMoTags>(.*?)<\/BunnyMoTags>/s) || 
@@ -2403,42 +2753,32 @@ function extractCharacterDataFromEntry(entry) {
     
     if (bunnyTagsMatch) {
         const tagsContent = bunnyTagsMatch[1];
-        if (extension_settings[extensionName]?.debugMode) {
-            console.log('🔍 CARROT DEBUG: Found BunnyMoTags content:', tagsContent.substring(0, 100));
-        }
-        
+        CarrotDebug.scan('Found BunnyMoTags content:', tagsContent.substring(0, 100));
+
         const tagMatches = tagsContent.match(/<([^:>]+):([^>]+)>/g);
-        
+
         if (tagMatches) {
-            if (extension_settings[extensionName]?.debugMode) {
-                console.log('🔍 CARROT DEBUG: Found tag matches:', tagMatches);
-            }
-            
+            CarrotDebug.scan('Found tag matches:', tagMatches);
+
             tagMatches.forEach(tagMatch => {
                 const match = tagMatch.match(/<([^:>]+):([^>]+)>/);
                 if (match) {
                     const category = match[1].toUpperCase().trim(); // Keep original case for display
                     const value = match[2].trim();
-                    
+
                     if (!character.tags[category]) {
                         character.tags[category] = [];
                     }
                     character.tags[category].push(value);
-                    
-                    if (extension_settings[extensionName]?.debugMode) {
-                        console.log(`🔍 CARROT DEBUG: Added tag - ${category}: ${value}`);
-                    }
+
+                    CarrotDebug.scan(`Added tag - ${category}: ${value}`);
                 }
             });
         } else {
-            if (extension_settings[extensionName]?.debugMode) {
-                console.log('⚠️ CARROT DEBUG: BunnyMoTags block found but no individual tags matched');
-            }
+            CarrotDebug.scan('BunnyMoTags block found but no individual tags matched');
         }
     } else {
-        if (extension_settings[extensionName]?.debugMode) {
-            console.log('⚠️ CARROT DEBUG: No BunnyMoTags block found in entry content');
-        }
+        CarrotDebug.scan('No BunnyMoTags block found in entry content');
     }
     
     CarrotDebug.scan(`✅ Extracted character: ${character.name} with ${Object.keys(character.tags).length} tag categories`);
@@ -2542,9 +2882,7 @@ function refreshTabContent(character, tabContents) {
     // Check if already showing this character to avoid unnecessary recreation
     const currentCharName = tabContents.personality?.getAttribute('data-current-character');
     if (currentCharName === character.name) {
-        if (extension_settings[extensionName]?.debugMode) {
-            console.log(`[BMT CARDS] Already showing ${character.name}, skipping refresh`);
-        }
+        CarrotDebug.ui(`Already showing ${character.name}, skipping refresh`);
         return;
     }
     
@@ -2589,7 +2927,10 @@ function refreshTabContent(character, tabContents) {
 // Add persistent <BunnyMoTags> to the last AI message after response
 async function addPersistentTagsToMessage(messageId) {
     const settings = extension_settings[extensionName];
-    
+
+    // Get the last injected characters
+    const lastInjectedCharacters = getLastInjectedCharacters();
+
     // Don't add persistent tags if disabled or no characters were injected
     if (!settings.enabled || !lastInjectedCharacters || lastInjectedCharacters.length === 0) {
         CarrotDebug.inject('⏭️ Skipping persistent tags', {
@@ -2598,12 +2939,12 @@ async function addPersistentTagsToMessage(messageId) {
         });
         return;
     }
-    
+
     CarrotDebug.inject('🏷️ Adding persistent <BunnyMoTags> to message', {
         messageId: messageId,
         injectedCharacters: lastInjectedCharacters
     });
-    
+
     try {
         // Find the message in chat array
         const message = chat.find(msg => msg.index === messageId);
@@ -2615,19 +2956,19 @@ async function addPersistentTagsToMessage(messageId) {
             });
             return;
         }
-        
+
         // Check if tags already exist to avoid duplicates
         if (message.mes && message.mes.includes('<BunnyMoTags>')) {
             CarrotDebug.inject('ℹ️ BunnyMoTags already exist in message, skipping');
             return;
         }
-        
+
         // Generate the persistent tags block
         const tagsBlock = generatePersistentTagsBlock(lastInjectedCharacters);
-        
+
         // Add the tags block to the message content
         message.mes = `${message.mes}\n\n${tagsBlock}`;
-        
+
         // Update the displayed message
         const messageElement = document.querySelector(`#chat .mes[mesid="${messageId}"]`);
         if (messageElement) {
@@ -2635,24 +2976,24 @@ async function addPersistentTagsToMessage(messageId) {
             if (mesText) {
                 // Re-render the message content to show the new tags
                 mesText.innerHTML = messageFormatting(message.mes, message.name, message.is_system, message.is_user, messageId);
-                
+
                 // Initialize the BunnyMoTags display
                 initializePersistentTagsDisplay(messageElement);
             }
         }
-        
+
         // Save the updated chat
         await saveChatConditional();
-        
+
         CarrotDebug.inject('✅ Persistent tags added successfully', {
             messageId: messageId,
             charactersCount: lastInjectedCharacters.length,
             tagsBlockLength: tagsBlock.length
         });
-        
+
         // Clear the tracked characters since we've processed them
         setLastInjectedCharacters([]);
-        
+
     } catch (error) {
         CarrotDebug.error('❌ Failed to add persistent tags', {
             error: error,
@@ -2959,7 +3300,9 @@ function initializeBunnyMoTagsContextFiltering() {
         
         CarrotDebug.init('✅ BunnyMoTags context filtering initialized');
     } else {
-        CarrotDebug.error('❌ Could not hook into Generate function for context filtering');
+        // This is not an error - Generate function may not be available yet or ST may use a different approach
+        // Context filtering is optional, so just log as debug info
+        CarrotDebug.init('ℹ️ Generate function not available - BunnyMoTags context filtering skipped (optional feature)');
     }
 }
 
@@ -2979,20 +3322,20 @@ function initializeBunnyMoTagsContextFiltering() {
 
 // Show a popup overlay with title and content
 function showCarrotPopup(title, content) {
-    console.log('🥕🔥 POPUP DEBUG: showPopup called with title:', title);
-    console.log('🥕🔥 POPUP DEBUG: Content length:', content?.length);
-    console.log('🥕🔥 POPUP DEBUG: Is mobile?', window.innerWidth <= 768);
+    CarrotDebug.ui('showPopup called with title:', title);
+    CarrotDebug.ui('Content length:', content?.length);
+    CarrotDebug.ui('Is mobile?', window.innerWidth <= 768);
 
     // DEBUG: Check if popup elements exist
     const overlay = document.getElementById('carrot-popup-overlay');
     const container = document.getElementById('carrot-popup-container');
-    console.log('🥕🔥 POPUP DEBUG: Elements exist?', { overlay: !!overlay, container: !!container });
-    console.log('🥕🔥 POPUP DEBUG: Overlay display:', overlay ? overlay.style.display : 'N/A');
-    console.log('🥕🔥 POPUP DEBUG: Container classes:', container ? container.className : 'N/A');
+    CarrotDebug.ui('Elements exist?', { overlay: !!overlay, container: !!container });
+    CarrotDebug.ui('Overlay display:', overlay ? overlay.style.display : 'N/A');
+    CarrotDebug.ui('Container classes:', container ? container.className : 'N/A');
 
     // For repository browser, inject content directly
     if (content.includes('carrot-repo-browser') || content.includes('carrot-github-browser') || title.includes('BunnyMo Repository')) {
-        console.log('🥕 Setting up repository browser popup');
+        CarrotDebug.ui('Setting up repository browser popup');
         const $container = $('#carrot-popup-container');
         $container.html(content);
         $container.addClass('carrot-repo-browser-popup');
@@ -3008,7 +3351,7 @@ function showCarrotPopup(title, content) {
                 'border-radius': '0',
                 'margin': '0'
             });
-            console.log('🥕🔥 MOBILE: Container set to full viewport');
+            CarrotDebug.ui('MOBILE: Container set to full viewport');
         } else {
             $container.css({
                 'width': 'min(95vw, 1600px)',
@@ -3016,7 +3359,7 @@ function showCarrotPopup(title, content) {
                 'max-width': 'min(95vw, 1600px)',
                 'max-height': 'min(90vh, 1000px)'
             });
-            console.log('🥕🔥 DESKTOP: Container set to large size');
+            CarrotDebug.ui('DESKTOP: Container set to large size');
         }
     } else {
         // For other popups, use the wrapped structure
@@ -3073,7 +3416,7 @@ function showCarrotPopup(title, content) {
         $container.find('*').css('pointer-events', 'auto');
     }, 50);
 
-    console.log('🥕🔥 POPUP DEBUG: After setting overlay styles:', {
+    CarrotDebug.ui('After setting overlay styles:', {
         display: $overlay.css('display'),
         width: $overlay.css('width'),
         height: $overlay.css('height'),
@@ -3167,20 +3510,20 @@ function openTemplateManager() {
 
 // Open pack manager for BunnyMo pack installation and updates
 async function openPackManager() {
-    console.log('🥕🔥 OPEN PACK MANAGER: Function called!');
-    console.log('🥕🔥 OPEN PACK MANAGER: Window width:', window.innerWidth);
+    CarrotDebug.repo('OPEN PACK MANAGER: Function called!');
+    CarrotDebug.repo('Window width:', window.innerWidth);
 
     // Prevent multiple simultaneous opens
     if (_packManagerOpening) {
-        console.log('🥕🔥 OPEN PACK MANAGER: Already opening, ignoring duplicate call');
+        CarrotDebug.repo('Already opening, ignoring duplicate call');
         return;
     }
 
     const settings = extension_settings[extensionName];
-    console.log('🥕🔥 OPEN PACK MANAGER: Settings enabled?', settings?.enabled);
+    CarrotDebug.repo('Settings enabled?', settings?.enabled);
 
     if (!settings.enabled) {
-        console.log('🥕🔥 OPEN PACK MANAGER: Extension disabled - showing error popup');
+        CarrotDebug.repo('Extension disabled - showing error popup');
         showCarrotPopup('CarrotKernel Disabled', `
             <p>CarrotKernel is currently disabled. Please enable it first to manage packs.</p>
             <p>Click the <strong>Master Enable</strong> toggle in the Feature Controls section.</p>
@@ -3205,9 +3548,9 @@ function showTemplateManagerInterface() {
 function openTemplateEditor() {
     const templates = CarrotTemplateManager.getTemplates();
     const templateKeys = Object.keys(templates);
-    
+
     if (templateKeys.length === 0) {
-        console.warn('No templates available');
+        CarrotDebug.error('No templates available');
         return;
     }
     
@@ -3258,11 +3601,11 @@ async function showPackManagerInterface() {
     try {
         // Initialize the GitHub browser
         if (!githubBrowser) {
-            console.log('🥕🔥 PACK MANAGER: Creating new GitHub browser');
+            CarrotDebug.repo('Creating new GitHub browser');
             githubBrowser = new CarrotGitHubBrowser();
         }
 
-        console.log('🥕🔥 PACK MANAGER: Starting loadRepository()');
+        CarrotDebug.repo('Starting loadRepository()');
 
         // Load the repository structure with timeout
         const loadPromise = githubBrowser.loadRepository();
@@ -3271,15 +3614,15 @@ async function showPackManagerInterface() {
         );
 
         await Promise.race([loadPromise, timeoutPromise]);
-        console.log('🥕🔥 PACK MANAGER: loadRepository() completed');
+        CarrotDebug.repo('loadRepository() completed');
 
         // Show the browser interface
-        console.log('🥕🔥 PACK MANAGER: Showing browser content');
+        CarrotDebug.repo('Showing browser content');
         await showGitHubBrowserContent();
-        console.log('🥕🔥 PACK MANAGER: Browser content displayed');
+        CarrotDebug.repo('Browser content displayed');
 
     } catch (error) {
-        console.error('🥕🔥 PACK MANAGER ERROR:', error);
+        CarrotDebug.error('PACK MANAGER ERROR:', error);
         CarrotDebug.error('GitHub browser error:', error);
         showCarrotPopup('Repository Connection Error', `
             <div class="carrot-error-panel">
@@ -3383,9 +3726,9 @@ async function showGitHubBrowserContent() {
 
     // Load the root directory content
     try {
-        console.log('🥕🔥 PACK MANAGER: Navigating to root directory');
+        CarrotDebug.repo('Navigating to root directory');
         await githubBrowser.navigateToPath('/');
-        console.log('🥕🔥 PACK MANAGER: Updating browser content');
+        CarrotDebug.repo('Updating browser content');
 
         // Wait for DOM to be ready with retry
         let retries = 0;
@@ -3394,10 +3737,10 @@ async function showGitHubBrowserContent() {
             const fileList = document.getElementById('carrot-file-list');
             if (fileList) {
                 await updateBrowserContent();
-                console.log('🥕🔥 PACK MANAGER: Browser content updated successfully');
+                CarrotDebug.repo('Browser content updated successfully');
                 break;
             }
-            console.log(`🥕🔥 PACK MANAGER: DOM not ready, retry ${retries + 1}/${maxRetries}`);
+            CarrotDebug.repo(`DOM not ready, retry ${retries + 1}/${maxRetries}`);
             await new Promise(resolve => setTimeout(resolve, 100));
             retries++;
         }
@@ -3406,7 +3749,7 @@ async function showGitHubBrowserContent() {
             throw new Error('DOM elements not found after waiting - popup may have failed to render');
         }
     } catch (error) {
-        console.error('🥕🔥 PACK MANAGER: Failed to load directory content:', error);
+        CarrotDebug.error('Failed to load directory content:', error);
         // Try to show error in the file list if it exists now
         setTimeout(() => {
             const fileList = document.getElementById('carrot-file-list');
@@ -3428,7 +3771,7 @@ async function updateBrowserContent() {
     const fileList = document.getElementById('carrot-file-list');
     const breadcrumbs = document.getElementById('carrot-breadcrumbs');
 
-    console.log('🥕🔥 UPDATE CONTENT: Elements found?', {
+    CarrotDebug.repo('UPDATE CONTENT: Elements found?', {
         fileList: !!fileList,
         breadcrumbs: !!breadcrumbs
     });
@@ -3719,7 +4062,7 @@ async function detectExistingPacks() {
             toastr.info('No additional BunnyMo packs detected in your lorebooks');
         }
     } catch (error) {
-        console.error('Failed to detect existing packs:', error);
+        CarrotDebug.error('Failed to detect existing packs:', error);
         toastr.error('Failed to detect existing packs: ' + error.message);
     } finally {
         if (button) {
@@ -3783,19 +4126,21 @@ async function showPackInstallDialog(path, filename) {
 
 // Check if a pack is already installed in ST's lorebooks
 async function checkPackInstalled(filename) {
-    console.log('🥕🔍 === PACK DETECTION STARTED ===');
-    console.log('🥕 Checking pack installation for:', filename);
-    
+    CarrotDebug.repo('PACK DETECTION STARTED');
+    CarrotDebug.repo('Checking pack installation for:', filename);
+
     try {
         // Dynamically import ST's world-info functions
         const worldInfoModule = await import('../../../world-info.js');
-        console.log('🥕 World-info module imported:', Object.keys(worldInfoModule));
-        
+        CarrotDebug.repo('World-info module imported:', Object.keys(worldInfoModule));
+
         const { world_names } = worldInfoModule;
-        console.log('🥕 Available world_names type:', typeof world_names);
-        console.log('🥕 Available world_names length:', world_names?.length);
-        console.log('🥕 Available world_names:', world_names);
-        
+        CarrotDebug.repo('Available world_names:', {
+            type: typeof world_names,
+            length: world_names?.length,
+            names: world_names
+        });
+
         // Remove .json extension and check various name formats
         const baseName = filename.replace('.json', '');
         const possibleNames = [
@@ -3808,9 +4153,9 @@ async function checkPackInstalled(filename) {
             baseName.replace(/\s+/g, '-'), // Replace spaces with dashes
             baseName.replace(/[^a-zA-Z0-9]/g, ''), // Remove all non-alphanumeric
         ];
-        
-        console.log('🥕 Checking possible names:', possibleNames);
-        
+
+        CarrotDebug.repo('Checking possible names:', possibleNames);
+
         // Check each possible name individually for better debugging
         const matches = [];
         for (const name of possibleNames) {
@@ -3818,29 +4163,29 @@ async function checkPackInstalled(filename) {
             if (found) {
                 matches.push(name);
             }
-            console.log(`🥕 "${name}" found: ${found}`);
+            CarrotDebug.repo(`"${name}" found: ${found}`);
         }
-        
+
         const isInstalled = matches.length > 0;
-        console.log('🥕 Pack installed?', isInstalled);
-        console.log('🥕 Matching names:', matches);
-        
+        CarrotDebug.repo('Pack installed?', isInstalled);
+        CarrotDebug.repo('Matching names:', matches);
+
         return isInstalled;
-        
+
     } catch (error) {
-        console.error('🥕 ❌ Pack detection failed:', error);
-        console.error('🥕 Error stack:', error.stack);
+        CarrotDebug.error('Pack detection failed:', error);
+        CarrotDebug.error('Error stack:', error.stack);
         CarrotDebug.error('Failed to check pack installation status:', error);
         return false;
     } finally {
-        console.log('🥕🔍 === PACK DETECTION ENDED ===');
+        CarrotDebug.repo('PACK DETECTION ENDED');
     }
 
 // Install pack using native ST lorebook system
 }
 async function installPackNative(downloadUrl, filename) {
-    console.log('🥕🔧 === NATIVE INSTALLATION STARTED ===');
-    console.log('🥕 installPackNative called:', { downloadUrl, filename });
+    CarrotDebug.repo('NATIVE INSTALLATION STARTED');
+    CarrotDebug.repo('installPackNative called:', { downloadUrl, filename });
 
     try {
         CarrotDebug.repo(`🚀 Installing pack: ${filename}`);
@@ -3855,11 +4200,11 @@ async function installPackNative(downloadUrl, filename) {
             if (urlParts) {
                 const [, owner, repo, path] = urlParts;
                 rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${githubBrowser.githubBranch}/${path}`;
-                console.log('🥕 Converted to raw URL:', rawUrl);
+                CarrotDebug.repo('Converted to raw URL:', rawUrl);
             }
         }
 
-        console.log('🥕 Step A: Downloading JSON file from:', rawUrl);
+        CarrotDebug.repo('Step A: Downloading JSON file from:', rawUrl);
         // Download the JSON file
         const response = await fetch(rawUrl, {
             method: 'GET',
@@ -3868,21 +4213,21 @@ async function installPackNative(downloadUrl, filename) {
             },
             cache: 'no-cache'
         });
-        console.log('🥕 Response status:', response.status);
-        console.log('🥕 Response content-type:', response.headers.get('content-type'));
+        CarrotDebug.repo('Response status:', response.status);
+        CarrotDebug.repo('Response content-type:', response.headers.get('content-type'));
 
         if (!response.ok) {
             throw new Error(`Failed to download: ${response.status} ${response.statusText}`);
         }
 
         // Parse as JSON first to validate structure
-        console.log('🥕 Step A1: Parsing JSON...');
+        CarrotDebug.repo('Step A1: Parsing JSON...');
         let parsedJson;
         try {
             parsedJson = await response.json();
-            console.log('🥕 JSON parsed successfully. Keys:', Object.keys(parsedJson));
+            CarrotDebug.repo('JSON parsed successfully. Keys:', Object.keys(parsedJson));
         } catch (parseError) {
-            console.error('🥕 JSON parse failed:', parseError);
+            CarrotDebug.error('JSON parse failed:', parseError);
             throw new Error(`Invalid JSON data: ${parseError.message}`);
         }
 
@@ -3893,35 +4238,37 @@ async function installPackNative(downloadUrl, filename) {
 
         // Convert back to formatted JSON string for the File object
         const jsonData = JSON.stringify(parsedJson, null, 2);
-        console.log('🥕 Downloaded data length:', jsonData.length);
-        console.log('🥕 Entry count:', Object.keys(parsedJson.entries).length);
+        CarrotDebug.repo('Downloaded data:', {
+            length: jsonData.length,
+            entryCount: Object.keys(parsedJson.entries).length
+        });
 
-        console.log('🥕 Step B: Creating File object...');
+        CarrotDebug.repo('Step B: Creating File object...');
         // Create a File object (simulating file upload)
         const blob = new Blob([jsonData], { type: 'application/json' });
         const file = new File([blob], filename, { type: 'application/json' });
-        console.log('🥕 Created File object:', { name: file.name, size: file.size, type: file.type });
-        
-        console.log('🥕 Step C: Importing world-info module...');
+        CarrotDebug.repo('Created File object:', { name: file.name, size: file.size, type: file.type });
+
+        CarrotDebug.repo('Step C: Importing world-info module...');
         // Dynamically import ST's world-info functions
         const worldInfoModule = await import('../../../world-info.js');
-        console.log('🥕 World-info module imported:', Object.keys(worldInfoModule));
-        
+        CarrotDebug.repo('World-info module imported:', Object.keys(worldInfoModule));
+
         const { importWorldInfo, updateWorldInfoList } = worldInfoModule;
-        console.log('🥕 Functions available:', { 
-            importWorldInfo: typeof importWorldInfo, 
-            updateWorldInfoList: typeof updateWorldInfoList 
+        CarrotDebug.repo('Functions available:', {
+            importWorldInfo: typeof importWorldInfo,
+            updateWorldInfoList: typeof updateWorldInfoList
         });
-        
-        console.log('🥕 Step D: Calling importWorldInfo...');
+
+        CarrotDebug.repo('Step D: Calling importWorldInfo...');
         // Import using ST's native system
         let importResult;
         try {
             importResult = await importWorldInfo(file);
-            console.log('🥕 Import result:', importResult);
+            CarrotDebug.repo('Import result:', importResult);
         } catch (importError) {
-            console.error('🥕 importWorldInfo failed:', importError);
-            console.error('🥕 Error details:', {
+            CarrotDebug.error('importWorldInfo failed:', importError);
+            CarrotDebug.error('Error details:', {
                 message: importError.message,
                 stack: importError.stack,
                 file: { name: file.name, size: file.size, type: file.type }
@@ -3929,20 +4276,20 @@ async function installPackNative(downloadUrl, filename) {
             throw new Error(`Failed to import lorebook: ${importError.message}`);
         }
 
-        console.log('🥕 Step E: Updating world info list...');
+        CarrotDebug.repo('Step E: Updating world info list...');
         // Refresh ST's lorebook list
         try {
             const updateResult = await updateWorldInfoList();
-            console.log('🥕 Update result:', updateResult);
+            CarrotDebug.repo('Update result:', updateResult);
         } catch (updateError) {
-            console.warn('🥕 updateWorldInfoList failed (non-critical):', updateError);
+            CarrotDebug.error('updateWorldInfoList failed (non-critical):', updateError);
             // Non-critical - continue even if this fails
         }
-        
+
         // Track the installation in our settings
         // CRITICAL: Never overwrite extension_settings completely
         if (!extension_settings[extensionName]) {
-            console.warn('⚠️ PACK MANAGER: extension_settings not initialized - this should not happen');
+            CarrotDebug.error('extension_settings not initialized - this should not happen');
             extension_settings[extensionName] = {};
         }
         if (!extension_settings[extensionName].installedPacks) {
@@ -3960,62 +4307,62 @@ async function installPackNative(downloadUrl, filename) {
         
         // Save settings
         saveSettingsDebounced();
-        
-        console.log('🥕 ✅ Native installation completed successfully');
+
+        CarrotDebug.repo('Native installation completed successfully');
         CarrotDebug.repo(`✅ Successfully installed: ${filename}`);
         toastr.success(`Installed ${filename} to your lorebooks!`);
-        
+
         return true;
-        
+
     } catch (error) {
-        console.error('🥕 ❌ Native installation failed:', error);
-        console.error('🥕 Error stack:', error.stack);
+        CarrotDebug.error('Native installation failed:', error);
+        CarrotDebug.error('Error stack:', error.stack);
         CarrotDebug.error(`Failed to install pack: ${error.message}`, error);
         toastr.error(`Installation failed: ${error.message}`);
         return false;
     } finally {
-        console.log('🥕🔧 === NATIVE INSTALLATION ENDED ===');
+        CarrotDebug.repo('NATIVE INSTALLATION ENDED');
     }
 
 // Install pack directly from GitHub (bypassing dialog)
 }
 async function installPackDirectly(path, filename) {
-    console.log('🥕🚀 === DIRECT INSTALLATION STARTED ===');
-    console.log('🥕 installPackDirectly called:', { path, filename });
-    console.log('🥕 User Agent:', navigator.userAgent);
-    console.log('🥕 Current URL:', window.location.href);
-    
+    CarrotDebug.repo('DIRECT INSTALLATION STARTED');
+    CarrotDebug.repo('installPackDirectly called:', { path, filename });
+    CarrotDebug.repo('User Agent:', navigator.userAgent);
+    CarrotDebug.repo('Current URL:', window.location.href);
+
     try {
-        console.log('🥕 Step 1: Getting download URL...');
+        CarrotDebug.repo('Step 1: Getting download URL...');
         const downloadUrl = await githubBrowser.getDownloadUrl(path);
-        console.log('🥕 Download URL obtained:', downloadUrl);
-        
-        console.log('🥕 Step 2: Calling installPackNative...');
+        CarrotDebug.repo('Download URL obtained:', downloadUrl);
+
+        CarrotDebug.repo('Step 2: Calling installPackNative...');
         const success = await installPackNative(downloadUrl, filename);
-        console.log('🥕 Installation result:', success);
-        
+        CarrotDebug.repo('Installation result:', success);
+
         if (success) {
-            console.log('🥕 Step 3: Refreshing browser content...');
+            CarrotDebug.repo('Step 3: Refreshing browser content...');
             // Refresh the file list to update status indicators
             await updateBrowserContent();
-            console.log('🥕 ✅ Direct installation completed successfully');
+            CarrotDebug.repo('Direct installation completed successfully');
         } else {
-            console.log('🥕 ❌ Installation reported failure');
+            CarrotDebug.repo('Installation reported failure');
         }
-        
+
     } catch (error) {
-        console.error('🥕 ❌ Direct installation failed:', error);
-        console.error('🥕 Error stack:', error.stack);
+        CarrotDebug.error('Direct installation failed:', error);
+        CarrotDebug.error('Error stack:', error.stack);
         CarrotDebug.error('Direct installation failed:', error);
         toastr.error(`Failed to install ${filename}: ${error.message}`);
     }
-    
-    console.log('🥕🏁 === DIRECT INSTALLATION ENDED ===');
+
+    CarrotDebug.repo('DIRECT INSTALLATION ENDED');
 }
 
 // Scan existing lorebooks to retroactively track installed packs
 async function scanExistingLorebooks() {
-    console.log('🔍 Scanning existing lorebooks for BunnyMo packs...');
+    CarrotDebug.repo('Scanning existing lorebooks for BunnyMo packs...');
 
     try {
         // Get all existing world info (lorebooks)
@@ -4024,7 +4371,7 @@ async function scanExistingLorebooks() {
 
         // CRITICAL: Never overwrite extension_settings completely
         if (!extension_settings[extensionName]) {
-            console.warn('⚠️ PACK MANAGER: extension_settings not initialized - this should not happen');
+            CarrotDebug.error('extension_settings not initialized - this should not happen');
             extension_settings[extensionName] = {};
         }
         if (!extension_settings[extensionName].installedPacks) {
@@ -4055,23 +4402,23 @@ async function scanExistingLorebooks() {
                     };
 
                     foundPacks++;
-                    console.log(`📦 Detected existing pack: ${bookName}`);
+                    CarrotDebug.repo(`Detected existing pack: ${bookName}`);
                 }
             }
         }
-        
+
         if (foundPacks > 0) {
             saveSettingsDebounced();
-            console.log(`✅ Retroactively tracked ${foundPacks} existing packs`);
+            CarrotDebug.repo(`Retroactively tracked ${foundPacks} existing packs`);
             toastr.info(`Found and tracked ${foundPacks} existing BunnyMo pack${foundPacks === 1 ? '' : 's'}`);
         } else {
-            console.log('ℹ️ No existing BunnyMo packs detected');
+            CarrotDebug.repo('No existing BunnyMo packs detected');
         }
-        
+
         return foundPacks;
-        
+
     } catch (error) {
-        console.error('❌ Failed to scan existing lorebooks:', error);
+        CarrotDebug.error('Failed to scan existing lorebooks:', error);
         return 0;
     }
 
@@ -4639,11 +4986,11 @@ async function manualScan() {
                 }, 2000);
             }
         }
-        
+
     } catch (error) {
-        console.error('Scan error:', error);
+        CarrotDebug.error('Scan error:', error);
         alert('Scan failed: ' + error.message);
-        
+
         // Restore button state on error
         if (scanBtn) {
             scanBtn.textContent = originalButtonText;
@@ -5342,47 +5689,51 @@ function parseBunnymoTags(text) {
 
 // DEBUG: Utility function to inspect modal sizing
 function debugModalSizing() {
-    console.log('🔍 MODAL SIZING DEBUG REPORT:');
-    
+    CarrotDebug.ui('MODAL SIZING DEBUG REPORT:');
+
     const container = document.getElementById('carrot-popup-container');
     const overlay = document.getElementById('carrot-popup-overlay');
-    
+
     if (!container) {
-        console.log('❌ No popup container found');
+        CarrotDebug.error('No popup container found');
         return;
     }
-    
-    console.log('📋 Container Info:');
-    console.log('  - ID:', container.id);
-    console.log('  - Classes:', container.className);
-    console.log('  - Inline styles:', container.style.cssText);
-    
+
+    CarrotDebug.ui('Container Info:', {
+        id: container.id,
+        classes: container.className,
+        inlineStyles: container.style.cssText
+    });
+
     const computedStyles = window.getComputedStyle(container);
-    console.log('📏 Computed Styles:');
-    console.log('  - Width:', computedStyles.width);
-    console.log('  - Height:', computedStyles.height);
-    console.log('  - Max-width:', computedStyles.maxWidth);
-    console.log('  - Max-height:', computedStyles.maxHeight);
-    console.log('  - Position:', computedStyles.position);
-    console.log('  - Display:', computedStyles.display);
-    
-    console.log('📐 Actual Dimensions:');
-    console.log('  - offsetWidth:', container.offsetWidth);
-    console.log('  - offsetHeight:', container.offsetHeight);
-    console.log('  - clientWidth:', container.clientWidth);
-    console.log('  - clientHeight:', container.clientHeight);
-    
+    CarrotDebug.ui('Computed Styles:', {
+        width: computedStyles.width,
+        height: computedStyles.height,
+        maxWidth: computedStyles.maxWidth,
+        maxHeight: computedStyles.maxHeight,
+        position: computedStyles.position,
+        display: computedStyles.display
+    });
+
+    CarrotDebug.ui('Actual Dimensions:', {
+        offsetWidth: container.offsetWidth,
+        offsetHeight: container.offsetHeight,
+        clientWidth: container.clientWidth,
+        clientHeight: container.clientHeight
+    });
+
     if (overlay) {
         const overlayStyles = window.getComputedStyle(overlay);
-        console.log('🗂️ Overlay Styles:');
-        console.log('  - Width:', overlayStyles.width);
-        console.log('  - Height:', overlayStyles.height);
-        console.log('  - Display:', overlayStyles.display);
-        console.log('  - Position:', overlayStyles.position);
+        CarrotDebug.ui('Overlay Styles:', {
+            width: overlayStyles.width,
+            height: overlayStyles.height,
+            display: overlayStyles.display,
+            position: overlayStyles.position
+        });
     }
-    
+
     // Check all CSS rules affecting this element
-    console.log('📜 CSS Rules affecting container:');
+    CarrotDebug.ui('Checking CSS Rules affecting container...');
     const sheets = Array.from(document.styleSheets);
     sheets.forEach((sheet, index) => {
         try {
@@ -5393,11 +5744,11 @@ function debugModalSizing() {
                     rule.selectorText.includes('#carrot-popup-container') ||
                     rule.selectorText.includes('.carrot-repo-browser-popup')
                 )) {
-                    console.log(`  - Sheet ${index}: ${rule.selectorText} -> ${rule.style.cssText}`);
+                    CarrotDebug.ui(`Sheet ${index}: ${rule.selectorText} -> ${rule.style.cssText}`);
                 }
             });
         } catch (e) {
-            console.log(`  - Sheet ${index}: Cannot access (cross-origin)`);
+            CarrotDebug.ui(`Sheet ${index}: Cannot access (cross-origin)`);
         }
     });
 }
@@ -6161,64 +6512,385 @@ window.CarrotKernel = {
     openLorebookConnector: () => CarrotLorebookConnector.open(),
     closeLorebookConnector: () => CarrotLorebookConnector.close(),
 
+    // Lorebook Scanning (exposed for pack manager)
+    scanSelectedLorebooks: (lorebookNames, targetCharacterName) => scanSelectedLorebooks(lorebookNames, targetCharacterName),
+
     // Utilities
     parseBunnymoTags: (text) => parseBunnymoTags(text),
     debugModalSizing: () => debugModalSizing()
 };
 ;
 
-// Initialize extension
-jQuery(async () => {
-    try {
-        if (extension_settings[extensionName]?.debugMode) {
-            console.log('🚨 CARROT KERNEL LOADING - NEW CODE VERSION! 🚨');
-        }
-        CarrotDebug.init('Starting CarrotKernel initialization...');
+// Store event handler references for cleanup
+let carrotEventHandlers = {
+    chatChanged: null,
+    messageRendered: null,
+    chatRestoreListener: null
+};
 
-        // Load lorebooks based on connections on chat load
-        // Use .once() or check if already registered to prevent duplicate listeners
-        if (!window.CARROT_CHAT_LISTENERS_REGISTERED) {
-            eventSource.on(event_types.CHAT_CHANGED, async () => {
-                console.log('🐰 CHAT_CHANGED: Loading lorebooks based on connections...');
+// Teardown function - removes all event listeners and cleans up
+function teardownExtension() {
+    CarrotDebug.init('Tearing down CarrotKernel - removing all event listeners...');
 
-                // Get lorebook connections from CarrotLorebookConnector
-                const connections = CarrotLorebookConnector.getCharacterConnections(this_chid);
+    // Remove event listeners if they were registered
+    if (carrotEventHandlers.chatChanged && window.CARROT_CHAT_LISTENERS_REGISTERED) {
+        eventSource.removeListener(event_types.CHAT_CHANGED, carrotEventHandlers.chatChanged);
+        window.CARROT_CHAT_LISTENERS_REGISTERED = false;
+    }
 
-                if (!connections || connections.length === 0) {
-                    console.log('🐰 No lorebook connections found for this character/chat');
+    if (carrotEventHandlers.messageRendered && window.CARROT_MESSAGE_LISTENER_REGISTERED) {
+        eventSource.removeListener(event_types.CHARACTER_MESSAGE_RENDERED, carrotEventHandlers.messageRendered);
+        window.CARROT_MESSAGE_LISTENER_REGISTERED = false;
+    }
 
-                    // Fallback: If auto-rescan is enabled and there are selected lorebooks, use old behavior
-                    const autoRescan = extension_settings[extensionName]?.autoRescanOnChatLoad ?? true;
-                    if (autoRescan && selectedLorebooks.size > 0) {
-                        const context = CarrotContext?.getCurrentContext();
-                        const characterName = context?.characterId && context.characters?.[context.characterId]
-                            ? context.characters[context.characterId].name
-                            : null;
+    if (carrotEventHandlers.chatRestoreListener && window.CARROT_RESTORE_LISTENER_REGISTERED) {
+        eventSource.removeListener(event_types.CHAT_CHANGED, carrotEventHandlers.chatRestoreListener);
+        window.CARROT_RESTORE_LISTENER_REGISTERED = false;
+    }
 
-                        console.log(`🥕 Fallback: Chat changed to "${characterName || 'unknown'}" - context-aware scanning...`);
-                        let lorebooksToScan = Array.from(selectedLorebooks);
-                        if (lorebooksToScan.length === 0 && characterRepoBooks.size > 0) {
-                            console.log('🥕 No selected lorebooks, scanning marked character repos');
-                            lorebooksToScan = Array.from(characterRepoBooks);
-                        }
-                        const results = await scanSelectedLorebooks(lorebooksToScan);
-                        console.log(`🥕 Context-aware scan complete - ${scannedCharacters.size} character(s) loaded for ${characterName}`, results);
+    if (carrotEventHandlers.worldInfoActivated && window.CARROT_WORLDINFO_LISTENER_REGISTERED) {
+        eventSource.removeListener(event_types.WORLD_INFO_ACTIVATED, carrotEventHandlers.worldInfoActivated);
+        window.CARROT_WORLDINFO_LISTENER_REGISTERED = false;
+    }
+
+    // Clear scanned data
+    scannedCharacters.clear();
+    selectedLorebooks.clear();
+
+    // Remove any displayed character cards/thinking blocks
+    document.querySelectorAll('.carrot-reasoning-details, .carrot-cards-container, .carrot-thinking-details').forEach(el => el.remove());
+
+    // Disable WorldBook Tracker
+    if (typeof CarrotWorldBookTracker !== 'undefined') {
+        CarrotWorldBookTracker.disable();
+    }
+
+    // Remove Baby Bunny buttons
+    remove_all_baby_bunny_buttons();
+
+    CarrotDebug.init('CarrotKernel teardown complete - extension dormant');
+}
+
+// Register all event listeners - can be called multiple times safely due to registration guards
+function registerEventListeners() {
+    CarrotDebug.init('Registering CarrotKernel event listeners...');
+
+    // 1. CHAT_CHANGED listener - Load lorebooks based on connections on chat load
+    if (!window.CARROT_CHAT_LISTENERS_REGISTERED) {
+        // Store the handler so we can remove it later
+        carrotEventHandlers.chatChanged = async () => {
+            CarrotDebug.scan('CHAT_CHANGED: Loading lorebooks based on connections...');
+
+            // Get lorebook connections from CarrotLorebookConnector
+            const connections = CarrotLorebookConnector.getCharacterConnections(this_chid);
+
+            if (!connections || connections.length === 0) {
+                CarrotDebug.scan('No lorebook connections found for this character/chat');
+
+                // Fallback: If auto-rescan is enabled and there are selected lorebooks, use old behavior
+                const autoRescan = extension_settings[extensionName]?.autoRescanOnChatLoad ?? true;
+                if (autoRescan && selectedLorebooks.size > 0) {
+                    const context = CarrotContext?.getCurrentContext();
+                    const characterName = context?.characterId && context.characters?.[context.characterId]
+                        ? context.characters[context.characterId].name
+                        : null;
+
+                    CarrotDebug.scan(`Fallback: Chat changed to "${characterName || 'unknown'}" - context-aware scanning...`);
+                    let lorebooksToScan = Array.from(selectedLorebooks);
+                    if (lorebooksToScan.length === 0 && characterRepoBooks.size > 0) {
+                        CarrotDebug.scan('No selected lorebooks, scanning marked character repos');
+                        lorebooksToScan = Array.from(characterRepoBooks);
                     }
-                } else {
-                    // Load lorebooks based on connections
-                    console.log(`🐰 Found ${connections.length} lorebook connections:`, connections);
+                    const results = await scanSelectedLorebooks(lorebooksToScan);
+                    CarrotDebug.scan(`Context-aware scan complete - ${scannedCharacters.size} character(s) loaded for ${characterName}`, results);
+                }
+            } else {
+                // Load lorebooks based on connections
+                CarrotDebug.scan(`Found ${connections.length} lorebook connections:`, connections);
 
-                    // Scan connected lorebooks
-                    const lorebooksToScan = connections.map(conn => conn.name);
-                    if (lorebooksToScan.length > 0) {
-                        const results = await scanSelectedLorebooks(lorebooksToScan);
-                        console.log(`🐰 Connection-based scan complete - ${scannedCharacters.size} character(s) loaded`, results);
+                // Scan connected lorebooks
+                const lorebooksToScan = connections.map(conn => conn.name);
+                if (lorebooksToScan.length > 0) {
+                    const results = await scanSelectedLorebooks(lorebooksToScan);
+                    CarrotDebug.scan(`Connection-based scan complete - ${scannedCharacters.size} character(s) loaded`, results);
+                }
+            }
+        };
+
+        // Register the handler
+        eventSource.on(event_types.CHAT_CHANGED, carrotEventHandlers.chatChanged);
+        window.CARROT_CHAT_LISTENERS_REGISTERED = true;
+        CarrotDebug.init('✓ CHAT_CHANGED listener registered');
+    }
+
+    // 2. CHARACTER_MESSAGE_RENDERED listener - Display thinking blocks and add persistent tags
+    if (!window.CARROT_MESSAGE_LISTENER_REGISTERED) {
+        // Store the handler so we can remove it later
+        carrotEventHandlers.messageRendered = async (messageId) => {
+            const settings = extension_settings[extensionName];
+
+            // CHARACTER_MESSAGE_RENDERED fires for AI messages, but we only want to show cards
+            // when we have pending data from a previous user message that triggered WORLD_INFO_ACTIVATED
+            const message = chat.find(msg => msg.index === messageId);
+
+            CarrotDebug.ui('Message lookup details:', {
+                messageId,
+                chatLength: chat.length,
+                messageFound: !!message,
+                chatIndexes: chat.map(msg => msg.index),
+                lastMessage: chat[chat.length - 1],
+                lastMessageIndex: chat[chat.length - 1]?.index,
+                targetMessage: message
+            });
+
+            // Try alternative lookup methods
+            const messageByLength = chat[chat.length - 1];
+            const messageByIdDirect = chat.find(msg => msg.id === messageId);
+            CarrotDebug.ui('Alternative lookups:', {
+                lastMessageByLength: messageByLength,
+                messageByIdDirect,
+                lastMessageContentPreview: messageByLength?.mes?.substring(0, 200)
+            });
+
+            CarrotDebug.ui(`🎭 CHARACTER_MESSAGE_RENDERED fired for message ${messageId}`, {
+                messageId: messageId,
+                isUser: message?.is_user,
+                messageFound: !!message,
+                pendingDataLength: pendingThinkingBlockData.length,
+                displayMode: settings.displayMode,
+                hasStoredData: message?.extra?.carrot_character_data ? true : false
+            });
+
+            // Skip if this is a user message (we process user messages in WORLD_INFO_ACTIVATED)
+            if (message?.is_user) {
+                CarrotDebug.ui(`⏭️ Skipping CHARACTER_MESSAGE_RENDERED - this is a user message, handled by WORLD_INFO_ACTIVATED`);
+                return;
+            }
+
+            // PERSISTENCE: Check if this message has stored CarrotKernel data (for page refresh recovery)
+            if (message?.extra?.carrot_character_data && !pendingThinkingBlockData.length) {
+                const storedData = message.extra.carrot_character_data;
+
+                CarrotDebug.ui('🔄 PERSISTENCE: Restoring thinking block from stored data', {
+                    messageId: messageId,
+                    storedCharacters: storedData.characters,
+                    storedDisplayMode: storedData.displayMode,
+                    currentDisplayMode: settings.displayMode
+                });
+
+                // Only restore if we're in thinking mode and this message doesn't already have the thinking block
+                if (settings.displayMode === 'thinking') {
+                    const existingThinkingBlock = document.querySelector(`[mesid="${messageId}"] .carrot-thinking-details`);
+
+                    if (!existingThinkingBlock && storedData.characters && storedData.characters.length > 0) {
+                        CarrotDebug.ui('🔄 PERSISTENCE: Restoring thinking block for message', {
+                            messageId: messageId,
+                            characters: storedData.characters
+                        });
+
+                        // Restore the thinking block using the stored character data
+                        displayCharacterData(storedData.characters);
+                        return; // Exit early since we restored from persistence
                     }
                 }
-            });
-            window.CARROT_CHAT_LISTENERS_REGISTERED = true;
-        }
+            }
 
+            // CHARACTER_MESSAGE_RENDERED should ONLY handle thinking mode
+            // Cards mode is already handled by WORLD_INFO_ACTIVATED -> sendCarrotSystemMessage
+            CarrotDebug.ui('CHARACTER_MESSAGE_RENDERED fired, checking thinking mode:', {
+                displayMode: settings.displayMode,
+                pendingDataLength: pendingThinkingBlockData.length,
+                pendingData: pendingThinkingBlockData
+            });
+
+            if (settings.displayMode === 'thinking' && pendingThinkingBlockData.length > 0) {
+                CarrotDebug.ui('Attempting to display thinking blocks for:', pendingThinkingBlockData);
+                CarrotDebug.ui('🧠 THINKING BLOCKS: Attempting to display thinking blocks', {
+                    characterNames: pendingThinkingBlockData
+                });
+
+                try {
+                    // For thinking mode, use displayCharacterData which will call renderAsThinkingBox
+                    displayCharacterData(pendingThinkingBlockData);
+                    CarrotDebug.ui('Successfully called displayCharacterData');
+                    CarrotDebug.ui('✅ THINKING BLOCKS: Successfully called displayCharacterData');
+                    pendingThinkingBlockData = []; // Clear after displaying
+                } catch (error) {
+                    CarrotDebug.error('Error displaying character data:', error);
+                    CarrotDebug.error('❌ THINKING BLOCKS: Error displaying character data', error);
+                }
+            } else {
+                // Clear any stale pending data if we're not in thinking mode
+                if (settings.displayMode !== 'thinking' && pendingThinkingBlockData.length > 0) {
+                    CarrotDebug.ui('🧹 Clearing stale pending data - display mode changed to:', settings.displayMode);
+                    pendingThinkingBlockData = [];
+                }
+
+                CarrotDebug.ui('⏭️ THINKING BLOCKS: Skipped display', {
+                    reason: settings.displayMode !== 'thinking' ? 'Not in thinking mode (cards handled by WORLD_INFO_ACTIVATED)' : 'No pending data',
+                    displayMode: settings.displayMode,
+                    pendingDataLength: pendingThinkingBlockData.length
+                });
+            }
+
+            // Add persistent tags
+            addPersistentTagsToMessage(messageId);
+
+            // 🐰 Baby Bunny Mode: Detect completed sheets and trigger guided automation
+            CarrotDebug.ui('Checking if Baby Bunny Mode should trigger', {
+                babyBunnyMode: settings.babyBunnyMode,
+                isUser: message?.is_user,
+                messageId: messageId,
+                shouldTrigger: settings.babyBunnyMode && !message?.is_user
+            });
+
+            if (settings.babyBunnyMode && !message?.is_user) {
+                CarrotDebug.ui('Triggering Baby Bunny Mode detection');
+
+                // If message lookup failed, try using the last message as fallback
+                let targetMessage = message;
+                if (!targetMessage && messageByLength && !messageByLength.is_user) {
+                    CarrotDebug.ui('Using fallback - last message from chat array');
+                    targetMessage = messageByLength;
+                }
+
+                checkForCompletedSheets(targetMessage, messageId);
+            } else {
+                CarrotDebug.ui('Not triggering - either disabled or user message');
+            }
+        };
+
+        // Register the handler
+        eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, carrotEventHandlers.messageRendered);
+        window.CARROT_MESSAGE_LISTENER_REGISTERED = true;
+        CarrotDebug.init('✓ CHARACTER_MESSAGE_RENDERED listener registered');
+    }
+
+    // 3. CHAT_CHANGED restore listener - Restore thinking blocks after page refresh/chat switch
+    if (!window.CARROT_RESTORE_LISTENER_REGISTERED) {
+        // Store the handler so we can remove it later
+        carrotEventHandlers.chatRestoreListener = async () => {
+            const settings = extension_settings[extensionName];
+
+            if (!settings.enabled || settings.displayMode !== 'thinking') return;
+
+            CarrotDebug.ui('📝 CHAT_CHANGED: Checking for thinking blocks to restore');
+
+            // Wait for auto-scan to complete before restoring (if auto-scan is enabled)
+            const autoRescan = extension_settings[extensionName]?.autoRescanOnChatLoad ?? true;
+            if (autoRescan && characterRepoBooks.size > 0) {
+                // Wait longer to ensure scan completes first
+                setTimeout(() => {
+                    CarrotDebug.ui('📝 RESTORE: Auto-scan should be complete, restoring thinking blocks');
+                    restoreThinkingBlocksFromChat();
+                }, 1500);
+            } else {
+                // No scan happening, restore immediately
+                setTimeout(() => {
+                    restoreThinkingBlocksFromChat();
+                }, 500);
+            }
+        };
+
+        // Register the handler
+        eventSource.on(event_types.CHAT_CHANGED, carrotEventHandlers.chatRestoreListener);
+        window.CARROT_RESTORE_LISTENER_REGISTERED = true;
+        CarrotDebug.init('✓ CHAT_CHANGED restore listener registered');
+    }
+
+    // 4. WORLD_INFO_ACTIVATED listener - Process activated entries and populate scannedCharacters
+    if (!window.CARROT_WORLDINFO_LISTENER_REGISTERED) {
+        // Wrapper function that checks for sheet commands first, then processes normal entries
+        carrotEventHandlers.worldInfoActivated = async function(entryList) {
+            const settings = extension_settings[extensionName];
+
+            if (!settings.enabled || !entryList || entryList.length === 0) {
+                return;
+            }
+
+            // Get the most recent user message to check what command they actually typed
+            const context = getContext();
+            const lastMessage = context?.chat?.[context.chat.length - 1];
+            const lastMessageText = lastMessage?.mes || '';
+
+            // Check what sheet command was in the user's message (if any)
+            let commandFromMessage = null;
+            const commandPatterns = [
+                { command: '!updatesheet', type: 'updatesheet' },  // Check longest first
+                { command: '!quicksheet', type: 'quicksheet' },
+                { command: '!fullsheet', type: 'fullsheet' },
+                { command: '!tagsheet', type: 'tagsheet' },
+                { command: '!memsheet', type: 'memsheet' }
+            ];
+
+            for (const { command, type } of commandPatterns) {
+                if (lastMessageText.toLowerCase().includes(command)) {
+                    commandFromMessage = type;
+                    CarrotDebug.inject(`Detected ${command} in user message`);
+                    break;
+                }
+            }
+
+            // If a sheet command was found in the message, process it
+            if (commandFromMessage) {
+                // Find the matching sheet command entry
+                const sheetCommandEntry = entryList.find(entry => {
+                    const key = entry.key || entry.keys || entry.title || entry.comment || '';
+                    const keyStr = (typeof key === 'string') ? key.toLowerCase() :
+                                  (Array.isArray(key)) ? key.join(' ').toLowerCase() :
+                                  String(key).toLowerCase();
+
+                    // Match the specific command found in the message
+                    return keyStr && keyStr.includes(`!${commandFromMessage}`);
+                });
+
+                if (sheetCommandEntry) {
+                    CarrotDebug.inject('Sheet command entry detected:', {
+                        type: commandFromMessage,
+                        entry: sheetCommandEntry
+                    });
+
+                    // Process the sheet command
+                    const pendingCommand = {
+                        type: commandFromMessage,
+                        entry: sheetCommandEntry
+                    };
+
+                    try {
+                        const success = await processSheetCommand(pendingCommand);
+                        if (success) {
+                            CarrotDebug.inject('✅ Sheet command processed successfully', pendingCommand);
+                        } else {
+                            CarrotDebug.error('❌ Sheet command processing failed', pendingCommand);
+                        }
+                    } catch (error) {
+                        CarrotDebug.error('❌ Error processing sheet command:', error);
+                    }
+
+                    // Skip normal character processing when sheet command is executed
+                    CarrotDebug.inject('Sheet command executed, skipping normal processing');
+                    return;
+                }
+            }
+
+            // No sheet command found, proceed with normal processing
+            await processActivatedLorebookEntries(entryList);
+        };
+
+        // Register the handler
+        eventSource.on(event_types.WORLD_INFO_ACTIVATED, carrotEventHandlers.worldInfoActivated);
+        window.CARROT_WORLDINFO_LISTENER_REGISTERED = true;
+        CarrotDebug.init('✓ WORLD_INFO_ACTIVATED listener registered (with sheet command detection)');
+    }
+
+    CarrotDebug.init('All event listeners registered successfully');
+}
+
+// =============================================================================
+// MAIN INITIALIZATION - Execute on module load
+// =============================================================================
+(async () => {
+    try {
         // Add CSS for CarrotKernel thinking blocks (exact copy of ST's native reasoning styles)
         const carrotThinkingCSS = `
             /* Copy all ST reasoning styles but with carrot-thinking prefixes */
@@ -6325,24 +6997,24 @@ jQuery(async () => {
         initializeRepositoryManager(showCarrotPopup, closeCarrotPopup, scanSelectedLorebooks, updateStatusPanels);
 
         // Initialize pack manager with retry mechanism
-        console.log('🎯 PACK MANAGER DEBUG: Initializing CarrotPackManager...');
+        CarrotDebug.repo('Initializing CarrotPackManager...');
 
         async function initializePackManagerWithRetry(retries = 3, delay = 1000) {
             for (let attempt = 1; attempt <= retries; attempt++) {
                 try {
-                    console.log(`🎯 PACK MANAGER DEBUG: Initialization attempt ${attempt}/${retries}`);
+                    CarrotDebug.repo(`Initialization attempt ${attempt}/${retries}`);
 
                     // Clear any existing instance
                     if (window.CarrotPackManager) {
-                        console.log('🎯 PACK MANAGER DEBUG: Clearing existing CarrotPackManager instance');
+                        CarrotDebug.repo('Clearing existing CarrotPackManager instance');
                         delete window.CarrotPackManager;
                     }
 
                     window.CarrotPackManager = new CarrotPackManager();
-                    console.log('🎯 PACK MANAGER DEBUG: CarrotPackManager created successfully');
+                    CarrotDebug.repo('CarrotPackManager created successfully');
 
                     window.CarrotPackManager.loadLocalPacks();
-                    console.log('🎯 PACK MANAGER DEBUG: Local packs loaded');
+                    CarrotDebug.repo('Local packs loaded');
 
                     // Verify the instance is properly set up
                     const verification = {
@@ -6353,25 +7025,25 @@ jQuery(async () => {
                         packsFolder: window.CarrotPackManager.packsFolder
                     };
 
-                    console.log('🎯 PACK MANAGER DEBUG: CarrotPackManager verification:', verification);
+                    CarrotDebug.repo('CarrotPackManager verification:', verification);
 
                     // Validate that all required components are working
                     if (!verification.exists || !verification.hasScanMethod || !verification.hasLoadMethod) {
                         throw new Error('CarrotPackManager initialization incomplete');
                     }
 
-                    console.log('✅ PACK MANAGER DEBUG: CarrotPackManager initialized successfully on attempt', attempt);
+                    CarrotDebug.repo('✅ CarrotPackManager initialized successfully on attempt', attempt);
                     return true;
 
                 } catch (error) {
-                    console.error(`❌ PACK MANAGER ERROR: Initialization attempt ${attempt} failed:`, error);
+                    CarrotDebug.error(`Initialization attempt ${attempt} failed:`, error);
 
                     if (attempt < retries) {
-                        console.log(`🔄 PACK MANAGER DEBUG: Retrying in ${delay}ms...`);
+                        CarrotDebug.repo(`Retrying in ${delay}ms...`);
                         await new Promise(resolve => setTimeout(resolve, delay));
                         delay *= 2; // Exponential backoff
                     } else {
-                        console.error('❌ PACK MANAGER ERROR: All initialization attempts failed');
+                        CarrotDebug.error('All initialization attempts failed');
 
                         // Provide user-visible error
                         setTimeout(() => {
@@ -6391,56 +7063,56 @@ jQuery(async () => {
         }
 
         // Start initialization
-        initializePackManagerWithRetry()
+        await initializePackManagerWithRetry()
 
         // Add global diagnostic function for users to troubleshoot pack manager issues
         window.CarrotPackManagerDiagnostics = function() {
             console.group('🥕 CARROT PACK MANAGER DIAGNOSTICS');
 
-            console.log('1. Pack Manager Instance:', {
+            CarrotDebug.ui('1. Pack Manager Instance:', {
                 exists: !!window.CarrotPackManager,
                 type: typeof window.CarrotPackManager,
                 constructor: window.CarrotPackManager?.constructor?.name
             });
 
             if (window.CarrotPackManager) {
-                console.log('2. Pack Manager Methods:', {
+                CarrotDebug.ui('2. Pack Manager Methods:', {
                     scanRemotePacks: typeof window.CarrotPackManager.scanRemotePacks,
                     loadLocalPacks: typeof window.CarrotPackManager.loadLocalPacks,
                     getPackInfo: typeof window.CarrotPackManager.getPackInfo
                 });
 
-                console.log('3. Pack Manager Configuration:', {
+                CarrotDebug.ui('3. Pack Manager Configuration:', {
                     githubRepo: window.CarrotPackManager.githubRepo,
                     packsFolder: window.CarrotPackManager.packsFolder,
                     availablePacksSize: window.CarrotPackManager.availablePacks?.size
                 });
             }
 
-            console.log('4. UI Elements:', {
+            CarrotDebug.ui('4. UI Elements:', {
                 scanButton: !!$('#carrot-pack-scan').length,
                 statusElement: !!$('#carrot-pack-status').length,
                 masterToggle: !!$('#carrot_enabled').length,
                 masterEnabled: extension_settings[extensionName]?.enabled
             });
 
-            console.log('5. Extension Settings:', {
+            CarrotDebug.ui('5. Extension Settings:', {
                 extensionName: extensionName,
                 settingsExist: !!extension_settings[extensionName],
                 debugMode: extension_settings[extensionName]?.debugMode
             });
 
-            console.log('6. Test GitHub API Access (run this manually if needed):');
-            console.log('fetch("https://api.github.com/repos/Chi-BiWolf/CarrotKernel-packs/contents/packs").then(r => console.log("API Status:", r.status, r.statusText))');
-            console.log('7. Test Rate-Limited API Access:');
-            console.log('window.CarrotPackManager.testRateLimiting() // Tests the new rate limiting system');
+            CarrotDebug.repo('6. Test GitHub API Access (run this manually if needed):');
+            CarrotDebug.repo('fetch("https://api.github.com/repos/Chi-BiWolf/CarrotKernel-packs/contents/packs").then(r => CarrotDebug.ui("API Status:", r.status, r.statusText))');
+            CarrotDebug.repo('7. Test Rate-Limited API Access:');
+            CarrotDebug.repo('window.CarrotPackManager.testRateLimiting() // Tests the new rate limiting system');
 
             console.groupEnd();
 
             return 'Diagnostics completed. Check the logs above for any issues.';
         };
 
-        console.log('🎯 PACK MANAGER DEBUG: Diagnostic function added. Run CarrotPackManagerDiagnostics() in console to troubleshoot.');
+        CarrotDebug.repo('Diagnostic function added. Run CarrotPackManagerDiagnostics() in console to troubleshoot.');
 
         // Check for pack updates on startup (like ST extensions)
         setTimeout(async () => {
@@ -6457,12 +7129,9 @@ jQuery(async () => {
         initializeSheetGenerator(findCharacterByName);
         CarrotDebug.init('Sheet generator initialized with findCharacterByName');
 
-        // Load settings HTML
-        console.log('🥕 CARROT: Loading settings.html...');
+        // Load settings HTML - silent initialization
         const settingsHtml = await $.get(`scripts/extensions/third-party/${extensionName}/settings.html`);
-        console.log('🥕 CARROT: settings.html loaded, length:', settingsHtml.length);
         $('#extensions_settings').append(settingsHtml);
-        console.log('🥕 CARROT: settings.html appended to DOM');
 
         // Update lorebook list
         updateLorebookList();
@@ -6472,7 +7141,7 @@ jQuery(async () => {
 
         // Debug all carrot-related icon clicks in world info
         $(document).on('click', '.fa-carrot, .wi_icon[title*="carrot"], .world_entry_icon[title*="carrot"], .carrot-icon', function(e) {
-            console.log('🥕 CLICK DEBUG: Carrot icon clicked!', {
+            CarrotDebug.ui('Carrot icon clicked!', {
                 element: this,
                 target: e.target,
                 currentTarget: e.currentTarget,
@@ -6486,7 +7155,7 @@ jQuery(async () => {
             // Check if this is within a world info entry
             const worldEntry = $(this).closest('.world_entry, .wi_entry, .world_info_entry');
             if (worldEntry.length) {
-                console.log('🥕 CLICK DEBUG: Found parent world info entry:', {
+                CarrotDebug.ui('Found parent world info entry:', {
                     entryElement: worldEntry[0],
                     entryId: worldEntry.attr('id'),
                     entryClasses: worldEntry[0].className,
@@ -6495,7 +7164,7 @@ jQuery(async () => {
             }
 
             // Check if click is being prevented
-            console.log('🥕 CLICK DEBUG: Event details:', {
+            CarrotDebug.ui('Event details:', {
                 defaultPrevented: e.isDefaultPrevented(),
                 propagationStopped: e.isPropagationStopped(),
                 immediatePropagationStopped: e.isImmediatePropagationStopped(),
@@ -6506,7 +7175,7 @@ jQuery(async () => {
 
         // Debug general world info icon clicks
         $(document).on('click', '.world_entry .fa-fw, .world_entry .world_entry_icon, .wi_entry .fa-fw', function(e) {
-            console.log('🌍 WI CLICK DEBUG: World info icon clicked!', {
+            CarrotDebug.ui('World info icon clicked!', {
                 element: this,
                 classes: this.className,
                 title: this.title,
@@ -6517,175 +7186,19 @@ jQuery(async () => {
         });
 
         // =============================================================================
-        // 🐰 BABY BUNNY MODE - GUIDED AUTOMATION SYSTEM
+        // 🐰 EVENT LISTENER REGISTRATION
         // =============================================================================
 
-
-        // Hook into CHARACTER_MESSAGE_RENDERED to display thinking blocks and add persistent tags
-        // Only register once to prevent duplicate Baby Bunny Mode executions
-        if (!window.CARROT_MESSAGE_LISTENER_REGISTERED) {
-            eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, async (messageId) => {
-                const settings = extension_settings[extensionName];
-            
-            // CHARACTER_MESSAGE_RENDERED fires for AI messages, but we only want to show cards
-            // when we have pending data from a previous user message that triggered WORLD_INFO_ACTIVATED
-            const message = chat.find(msg => msg.index === messageId);
-
-            console.log('🐰 BABY BUNNY DEBUG: Message lookup details');
-            console.log('  messageId:', messageId);
-            console.log('  chatLength:', chat.length);
-            console.log('  messageFound:', !!message);
-            console.log('  chatIndexes:', chat.map(msg => msg.index));
-            console.log('  lastMessage:', chat[chat.length - 1]);
-            console.log('  lastMessageIndex:', chat[chat.length - 1]?.index);
-            console.log('  targetMessage:', message);
-
-            // Try alternative lookup methods
-            const messageByLength = chat[chat.length - 1];
-            const messageByIdDirect = chat.find(msg => msg.id === messageId);
-            console.log('🐰 BABY BUNNY DEBUG: Alternative lookups');
-            console.log('  lastMessageByLength:', messageByLength);
-            console.log('  messageByIdDirect:', messageByIdDirect);
-            console.log('  lastMessageContent preview:', messageByLength?.mes?.substring(0, 200));
-
-            CarrotDebug.ui(`🎭 CHARACTER_MESSAGE_RENDERED fired for message ${messageId}`, {
-                messageId: messageId,
-                isUser: message?.is_user,
-                messageFound: !!message,
-                pendingDataLength: pendingThinkingBlockData.length,
-                displayMode: settings.displayMode,
-                hasStoredData: message?.extra?.carrot_character_data ? true : false
-            });
-            
-            // Skip if this is a user message (we process user messages in WORLD_INFO_ACTIVATED)
-            if (message?.is_user) {
-                CarrotDebug.ui(`⏭️ Skipping CHARACTER_MESSAGE_RENDERED - this is a user message, handled by WORLD_INFO_ACTIVATED`);
-                return;
-            }
-            
-            // PERSISTENCE: Check if this message has stored CarrotKernel data (for page refresh recovery)
-            if (message?.extra?.carrot_character_data && !pendingThinkingBlockData.length) {
-                const storedData = message.extra.carrot_character_data;
-                
-                CarrotDebug.ui('🔄 PERSISTENCE: Restoring thinking block from stored data', {
-                    messageId: messageId,
-                    storedCharacters: storedData.characters,
-                    storedDisplayMode: storedData.displayMode,
-                    currentDisplayMode: settings.displayMode
-                });
-                
-                // Only restore if we're in thinking mode and this message doesn't already have the thinking block
-                if (settings.displayMode === 'thinking') {
-                    const existingThinkingBlock = document.querySelector(`[mesid="${messageId}"] .carrot-thinking-details`);
-                    
-                    if (!existingThinkingBlock && storedData.characters && storedData.characters.length > 0) {
-                        CarrotDebug.ui('🔄 PERSISTENCE: Restoring thinking block for message', {
-                            messageId: messageId,
-                            characters: storedData.characters
-                        });
-                        
-                        // Restore the thinking block using the stored character data
-                        displayCharacterData(storedData.characters);
-                        return; // Exit early since we restored from persistence
-                    }
-                }
-            }
-            
-            // CHARACTER_MESSAGE_RENDERED should ONLY handle thinking mode
-            // Cards mode is already handled by WORLD_INFO_ACTIVATED -> sendCarrotSystemMessage
-            console.log('🎭 CARROT DEBUG: CHARACTER_MESSAGE_RENDERED fired, checking thinking mode:', {
-                displayMode: settings.displayMode,
-                pendingDataLength: pendingThinkingBlockData.length,
-                pendingData: pendingThinkingBlockData
-            });
-            
-            if (settings.displayMode === 'thinking' && pendingThinkingBlockData.length > 0) {
-                console.log('🧠 CARROT DEBUG: Attempting to display thinking blocks for:', pendingThinkingBlockData);
-                CarrotDebug.ui('🧠 THINKING BLOCKS: Attempting to display thinking blocks', {
-                    characterNames: pendingThinkingBlockData
-                });
-                
-                try {
-                    // For thinking mode, use displayCharacterData which will call renderAsThinkingBox
-                    displayCharacterData(pendingThinkingBlockData);
-                    console.log('✅ CARROT DEBUG: Successfully called displayCharacterData');
-                    CarrotDebug.ui('✅ THINKING BLOCKS: Successfully called displayCharacterData');
-                    pendingThinkingBlockData = []; // Clear after displaying
-                } catch (error) {
-                    console.error('❌ CARROT DEBUG: Error displaying character data:', error);
-                    CarrotDebug.error('❌ THINKING BLOCKS: Error displaying character data', error);
-                }
-            } else {
-                // Clear any stale pending data if we're not in thinking mode
-                if (settings.displayMode !== 'thinking' && pendingThinkingBlockData.length > 0) {
-                    CarrotDebug.ui('🧹 Clearing stale pending data - display mode changed to:', settings.displayMode);
-                    pendingThinkingBlockData = [];
-                }
-                
-                CarrotDebug.ui('⏭️ THINKING BLOCKS: Skipped display', {
-                    reason: settings.displayMode !== 'thinking' ? 'Not in thinking mode (cards handled by WORLD_INFO_ACTIVATED)' : 'No pending data',
-                    displayMode: settings.displayMode,
-                    pendingDataLength: pendingThinkingBlockData.length
-                });
-            }
-            
-            // Add persistent tags
-            addPersistentTagsToMessage(messageId);
-
-            // 🐰 Baby Bunny Mode: Detect completed sheets and trigger guided automation
-            console.log('🐰 BABY BUNNY DEBUG: Checking if Baby Bunny Mode should trigger', {
-                babyBunnyMode: settings.babyBunnyMode,
-                isUser: message?.is_user,
-                messageId: messageId,
-                shouldTrigger: settings.babyBunnyMode && !message?.is_user
-            });
-
-            if (settings.babyBunnyMode && !message?.is_user) {
-                console.log('🐰 BABY BUNNY DEBUG: Triggering Baby Bunny Mode detection');
-
-                // If message lookup failed, try using the last message as fallback
-                let targetMessage = message;
-                if (!targetMessage && messageByLength && !messageByLength.is_user) {
-                    console.log('🐰 BABY BUNNY DEBUG: Using fallback - last message from chat array');
-                    targetMessage = messageByLength;
-                }
-
-                checkForCompletedSheets(targetMessage, messageId);
-            } else {
-                console.log('🐰 BABY BUNNY DEBUG: Not triggering - either disabled or user message');
-            }
-            });
-            window.CARROT_MESSAGE_LISTENER_REGISTERED = true;
+        // Only register event listeners if extension is enabled
+        // If disabled, user can still toggle it back on via the settings panel
+        if (extension_settings[extensionName]?.enabled) {
+            CarrotDebug.init('Extension is enabled - registering event listeners');
+            registerEventListeners();
+        } else {
+            CarrotDebug.init('Extension is disabled - skipping event listener registration');
+            CarrotDebug.init('Settings panel remains accessible - toggle Master Enable to activate');
         }
 
-        // Hook into CHAT_CHANGED to restore thinking blocks after page refresh/chat switch
-        // Only register once to prevent memory leaks
-        if (!window.CARROT_RESTORE_LISTENER_REGISTERED) {
-            eventSource.on(event_types.CHAT_CHANGED, async () => {
-                const settings = extension_settings[extensionName];
-
-                if (!settings.enabled || settings.displayMode !== 'thinking') return;
-
-                CarrotDebug.ui('📝 CHAT_CHANGED: Checking for thinking blocks to restore');
-
-                // Wait for auto-scan to complete before restoring (if auto-scan is enabled)
-                const autoRescan = extension_settings[extensionName]?.autoRescanOnChatLoad ?? true;
-                if (autoRescan && characterRepoBooks.size > 0) {
-                    // Wait longer to ensure scan completes first
-                    setTimeout(() => {
-                        CarrotDebug.ui('📝 RESTORE: Auto-scan should be complete, restoring thinking blocks');
-                        restoreThinkingBlocksFromChat();
-                    }, 1500);
-                } else {
-                    // No scan happening, restore immediately
-                    setTimeout(() => {
-                        restoreThinkingBlocksFromChat();
-                    }, 500);
-                }
-            });
-            window.CARROT_RESTORE_LISTENER_REGISTERED = true;
-        }
-        
         // Initialize debug system
         CarrotDebug.setEnabled(extension_settings[extensionName]?.debugMode || false);
         
@@ -6697,33 +7210,38 @@ jQuery(async () => {
         // Get context-aware settings to determine if we should auto-scan
         const currentSettings = await CarrotStorage.getSettings();
 
-        // Determine which lorebooks to scan: selected ones, or fall back to marked character repos
-        let lorebooksToScan = Array.from(selectedLorebooks);
-        if (lorebooksToScan.length === 0 && characterRepoBooks.size > 0) {
-            CarrotDebug.init('No selected lorebooks, will scan marked character repos');
-            lorebooksToScan = Array.from(characterRepoBooks);
-        }
-
-        // Only auto-scan if explicitly enabled in settings and we have lorebooks to scan
-        if (currentSettings.scanOnStartup && lorebooksToScan.length > 0 && scannedCharacters.size === 0) {
-            CarrotDebug.init('Auto-scanning lorebooks on initialization (enabled in settings)');
-            const scanResult = await scanSelectedLorebooks(lorebooksToScan);
-            CarrotDebug.init('Auto-scan completed', scanResult);
-        } else if (lorebooksToScan.length > 0) {
-            CarrotDebug.init('Auto-scan disabled - lorebooks will be scanned on-demand only');
-        }
-        
-        // Initialize WorldBook Tracker
-        try {
-            CarrotWorldBookTracker.init();
-            CarrotDebug.init('WorldBook Tracker initialized successfully');
-
-            // Apply initial enabled state
-            if (!extension_settings[extensionName]?.worldBookTrackerEnabled) {
-                CarrotWorldBookTracker.disable();
+        // Only auto-scan and initialize features if extension is enabled
+        if (extension_settings[extensionName]?.enabled) {
+            // Determine which lorebooks to scan: selected ones, or fall back to marked character repos
+            let lorebooksToScan = Array.from(selectedLorebooks);
+            if (lorebooksToScan.length === 0 && characterRepoBooks.size > 0) {
+                CarrotDebug.init('No selected lorebooks, will scan marked character repos');
+                lorebooksToScan = Array.from(characterRepoBooks);
             }
-        } catch (error) {
-            CarrotDebug.error('WorldBook Tracker initialization failed', error);
+
+            // Only auto-scan if explicitly enabled in settings and we have lorebooks to scan
+            if (currentSettings.scanOnStartup && lorebooksToScan.length > 0 && scannedCharacters.size === 0) {
+                CarrotDebug.init('Auto-scanning lorebooks on initialization (enabled in settings)');
+                const scanResult = await scanSelectedLorebooks(lorebooksToScan);
+                CarrotDebug.init('Auto-scan completed', scanResult);
+            } else if (lorebooksToScan.length > 0) {
+                CarrotDebug.init('Auto-scan disabled - lorebooks will be scanned on-demand only');
+            }
+
+            // Initialize WorldBook Tracker
+            try {
+                CarrotWorldBookTracker.init();
+                CarrotDebug.init('WorldBook Tracker initialized successfully');
+
+                // Apply initial enabled state
+                if (!extension_settings[extensionName]?.worldBookTrackerEnabled) {
+                    CarrotWorldBookTracker.disable();
+                }
+            } catch (error) {
+                CarrotDebug.error('WorldBook Tracker initialization failed', error);
+            }
+        } else {
+            CarrotDebug.init('Extension disabled - skipping auto-scan and feature initialization');
         }
 
         CarrotDebug.init('CarrotKernel initialized successfully', {
@@ -6736,13 +7254,16 @@ jQuery(async () => {
         });
         
     } catch (error) {
+        // Always log initialization errors to console, regardless of debug settings
+        CarrotDebug.error('🥕 CarrotKernel initialization failed:', error);
+        CarrotDebug.error('Stack trace:', error.stack);
         CarrotDebug.error('CarrotKernel initialization failed', error);
     }
-});
+})();
 
 // Apply master enable state to UI and functionality
 function applyMasterEnableState(isEnabled) {
-    console.log('🎯 MASTER ENABLE DEBUG: applyMasterEnableState called:', {
+    CarrotDebug.ui('applyMasterEnableState called:', {
         isEnabled: isEnabled,
         timestamp: new Date().toISOString()
     });
@@ -6766,7 +7287,7 @@ function applyMasterEnableState(isEnabled) {
         '#carrot-search-lorebooks'
     ];
 
-    console.log('🎯 MASTER ENABLE DEBUG: Updating UI elements state:', {
+    CarrotDebug.ui('Updating UI elements state:', {
         elementCount: uiElements.length,
         disabling: !isEnabled
     });
@@ -6777,14 +7298,17 @@ function applyMasterEnableState(isEnabled) {
         element.prop('disabled', !isEnabled);
 
         if (!elementExists) {
-            console.warn(`⚠️ MASTER ENABLE DEBUG: UI element not found: ${selector}`);
+            CarrotDebug.error(`UI element not found: ${selector}`);
         }
     });
 
     // Add visual indication to the entire settings panel
     if (isEnabled) {
-        console.log('🎯 MASTER ENABLE DEBUG: Enabling UI - removing disabled class');
+        CarrotDebug.ui('Enabling UI - removing disabled class');
         $('#carrot_settings').removeClass('carrot-disabled');
+
+        // Re-register all event listeners
+        registerEventListeners();
 
         // Re-enable WorldBook Tracker if it was enabled in settings
         if (extension_settings[extensionName]?.worldBookTrackerEnabled) {
@@ -6796,34 +7320,21 @@ function applyMasterEnableState(isEnabled) {
             add_baby_bunny_buttons_to_all_existing_messages();
         }
 
-        CarrotDebug.ui('UI elements ENABLED');
+        CarrotDebug.ui('UI elements ENABLED and event listeners registered');
     } else {
-        console.log('🎯 MASTER ENABLE DEBUG: Disabling UI - adding disabled class and clearing displays');
+        CarrotDebug.ui('Disabling UI - tearing down extension');
         $('#carrot_settings').addClass('carrot-disabled');
 
-        // Clear all existing character displays when disabled
-        const existingDisplays = document.querySelectorAll('.carrot-reasoning-details, .carrot-cards-container');
-        console.log(`🎯 MASTER ENABLE DEBUG: Removing ${existingDisplays.length} existing character displays`);
-        existingDisplays.forEach(el => {
-            el.remove();
-        });
+        // Tear down all event listeners and clean up
+        teardownExtension();
 
-        // Clear scanned character data
-        scannedCharacters.clear();
-
-        // Disable WorldBook Tracker when master is disabled
-        CarrotWorldBookTracker.disable();
-
-        // Remove all Baby Bunny buttons when master is disabled
-        remove_all_baby_bunny_buttons();
-
-        CarrotDebug.ui('UI elements DISABLED and data cleared');
+        CarrotDebug.ui('UI elements DISABLED and extension torn down');
     }
 }
 
 // Bind all settings UI events
 function bindSettingsEvents() {
-    console.log('🎯 DOM DEBUG: bindSettingsEvents called');
+    CarrotDebug.ui('bindSettingsEvents called');
 
     // Check if DOM is ready and elements exist before binding
     function waitForElement(selector, timeout = 10000) {
@@ -6833,10 +7344,10 @@ function bindSettingsEvents() {
             function checkElement() {
                 const element = $(selector);
                 if (element.length > 0) {
-                    console.log(`✅ DOM DEBUG: Element found: ${selector}`);
+                    CarrotDebug.ui(`Element found: ${selector}`);
                     resolve(element);
                 } else if (Date.now() - startTime > timeout) {
-                    console.error(`❌ DOM DEBUG: Element not found after ${timeout}ms: ${selector}`);
+                    CarrotDebug.ui(`Element not found after ${timeout}ms: ${selector}`);
                     reject(new Error(`Element ${selector} not found within timeout`));
                 } else {
                     setTimeout(checkElement, 100);
@@ -6856,31 +7367,31 @@ function bindSettingsEvents() {
         '#carrot_settings'
     ];
 
-    console.log('🎯 DOM DEBUG: Waiting for critical elements...', criticalElements);
+    CarrotDebug.ui('Waiting for critical elements...', criticalElements);
 
     Promise.allSettled(criticalElements.map(selector => waitForElement(selector)))
         .then(results => {
             const failures = results.filter(r => r.status === 'rejected');
             if (failures.length > 0) {
-                console.warn('⚠️ DOM DEBUG: Some elements not found:', failures.map(f => f.reason?.message));
+                CarrotDebug.ui('Some elements not found:', failures.map(f => f.reason?.message));
             }
 
-            console.log('🎯 DOM DEBUG: Proceeding with event binding...');
+            CarrotDebug.ui('Proceeding with event binding...');
             bindActualEvents();
         })
         .catch(error => {
-            console.error('❌ DOM DEBUG: Critical error in element waiting:', error);
+            CarrotDebug.error('Critical error in element waiting:', error);
             // Try binding anyway as a fallback
             setTimeout(() => bindActualEvents(), 2000);
         });
 
     function bindActualEvents() {
-        console.log('🎯 DOM DEBUG: Starting actual event binding...');
+        CarrotDebug.ui('Starting actual event binding...');
     
     // Master enable toggle
     $('#carrot_enabled').prop('checked', settings.enabled).on('change', async function() {
         const isEnabled = Boolean($(this).prop('checked'));
-        console.log('🎯 MASTER TOGGLE DEBUG: State changed:', {
+        CarrotDebug.ui('Master toggle state changed:', {
             previousState: settings.enabled,
             newState: isEnabled,
             timestamp: new Date().toISOString()
@@ -6888,20 +7399,20 @@ function bindSettingsEvents() {
 
         extension_settings[extensionName].enabled = isEnabled;
 
-        console.log('🎯 MASTER TOGGLE DEBUG: Applying master enable state...');
+        CarrotDebug.ui('Applying master enable state...');
         // Apply master enable state
         applyMasterEnableState(isEnabled);
 
-        console.log('🎯 MASTER TOGGLE DEBUG: Updating status panels...');
+        CarrotDebug.ui('Updating status panels...');
         // Update status panels
         updateStatusPanels();
 
 
-        console.log('🎯 MASTER TOGGLE DEBUG: Saving settings...');
+        CarrotDebug.ui('Saving settings...');
         saveSettingsDebounced();
         CarrotDebug.setting('masterEnable', !isEnabled, isEnabled);
 
-        console.log('🎯 MASTER TOGGLE DEBUG: Master toggle change completed');
+        CarrotDebug.ui('Master toggle change completed');
     });
     
     // Display mode
@@ -6949,7 +7460,7 @@ function bindSettingsEvents() {
         extension_settings[extensionName].babyBunnyMode = newValue;
         saveSettingsDebounced();
 
-        console.log('🐰 BABY BUNNY DEBUG: Toggle changed', {
+        CarrotDebug.ui('Baby Bunny toggle changed', {
             oldValue: settings.babyBunnyMode,
             newValue: newValue,
             settingsSaved: true
@@ -6958,11 +7469,11 @@ function bindSettingsEvents() {
         if (newValue) {
             add_baby_bunny_buttons_to_all_existing_messages();
             toastr.info('🐰 Baby Bunny Mode enabled! I\'ll now guide you through creating character archives when you complete sheet commands.');
-            console.log('🐰 BABY BUNNY DEBUG: Baby Bunny Mode ENABLED - will detect BunnymoTags in AI responses');
+            CarrotDebug.ui('Baby Bunny Mode ENABLED - will detect BunnymoTags in AI responses');
         } else {
             remove_all_baby_bunny_buttons();
             toastr.info('🐰 Baby Bunny Mode disabled.');
-            console.log('🐰 BABY BUNNY DEBUG: Baby Bunny Mode DISABLED');
+            CarrotDebug.ui('Baby Bunny Mode DISABLED');
         }
 
     });
@@ -6994,9 +7505,9 @@ function bindSettingsEvents() {
             toastr.info('🔄 Auto-rescan enabled');
             // Immediately scan and restore for current chat
             if (selectedLorebooks.size > 0) {
-                console.log('🥕 Auto-rescan enabled - scanning current chat...');
+                CarrotDebug.scan('Auto-rescan enabled - scanning current chat...');
                 await scanSelectedLorebooks(Array.from(selectedLorebooks));
-                console.log(`🥕 Scan complete - ${scannedCharacters.size} characters loaded`);
+                CarrotDebug.scan(`Scan complete - ${scannedCharacters.size} characters loaded`);
 
                 // Restore thinking blocks for current chat
                 setTimeout(() => {
@@ -7499,14 +8010,14 @@ function bindSettingsEvents() {
                 return;
             }
 
-            console.log(`🔄 Starting re-vectorization of ${collections.length} collections...`);
+            CarrotDebug.ui(`Starting re-vectorization of ${collections.length} collections...`);
 
             let successCount = 0;
             let failCount = 0;
 
             for (const collectionId of collections) {
                 try {
-                    console.log(`🔄 Re-vectorizing collection: ${collectionId}`);
+                    CarrotDebug.ui(`Re-vectorizing collection: ${collectionId}`);
 
                     // Delete the entire collection from vector DB
                     if (fullsheetAPI.deleteEntireCollection) {
@@ -7533,10 +8044,10 @@ function bindSettingsEvents() {
                     await fullsheetAPI.apiInsertVectorItems(collectionId, chunks);
 
                     successCount++;
-                    console.log(`✅ Successfully re-vectorized: ${collectionId}`);
+                    CarrotDebug.ui(`Successfully re-vectorized: ${collectionId}`);
                 } catch (error) {
                     failCount++;
-                    console.error(`❌ Failed to re-vectorize ${collectionId}:`, error);
+                    CarrotDebug.error(`Failed to re-vectorize ${collectionId}:`, error);
                 }
             }
 
@@ -7556,10 +8067,10 @@ function bindSettingsEvents() {
                 toastr.error(`Failed to re-vectorize ${failCount} collection(s)`);
             }
 
-            console.log(`🏁 Re-vectorization complete: ${successCount} success, ${failCount} failed`);
+            CarrotDebug.ui(`Re-vectorization complete: ${successCount} success, ${failCount} failed`);
 
         } catch (error) {
-            console.error('Re-vectorization error:', error);
+            CarrotDebug.error('Re-vectorization error:', error);
             toastr.error(`Re-vectorization failed: ${error.message}`);
         } finally {
             $btn.prop('disabled', false).html(originalText);
@@ -7772,8 +8283,8 @@ function bindSettingsEvents() {
             const contextLevel = await getCurrentContextLevel();
             const library = await getContextualLibrary();
             const collections = Object.keys(library);
-            console.log(`🥕 RAG Collections (${contextLevel.toUpperCase()} storage):`, collections);
-            console.log('Total collections:', collections.length);
+            CarrotDebug.ui(`RAG Collections (${contextLevel.toUpperCase()} storage):`, collections);
+            CarrotDebug.ui('Total collections:', collections.length);
             return collections;
         },
 
@@ -7783,12 +8294,12 @@ function bindSettingsEvents() {
             const library = await getContextualLibrary();
             const chunks = library[collectionId];
             if (!chunks) {
-                console.warn(`Collection "${collectionId}" not found in ${contextLevel} storage`);
-                console.log('Available collections:', Object.keys(library));
+                CarrotDebug.error(`Collection "${collectionId}" not found in ${contextLevel} storage`);
+                CarrotDebug.ui('Available collections:', Object.keys(library));
                 return null;
             }
-            console.log(`🥕 Chunks for "${collectionId}" (${contextLevel} storage):`, chunks);
-            console.log(`Total chunks: ${Object.keys(chunks).length}`);
+            CarrotDebug.ui(`Chunks for "${collectionId}" (${contextLevel} storage):`, chunks);
+            CarrotDebug.ui(`Total chunks: ${Object.keys(chunks).length}`);
             return chunks;
         },
 
@@ -7798,10 +8309,10 @@ function bindSettingsEvents() {
             if (!chunks) return null;
             const chunk = chunks[hash];
             if (!chunk) {
-                console.warn(`Chunk ${hash} not found in collection "${collectionId}"`);
+                CarrotDebug.error(`Chunk ${hash} not found in collection "${collectionId}"`);
                 return null;
             }
-            console.log('🥕 Chunk:', chunk);
+            CarrotDebug.ui('Chunk:', chunk);
             return chunk;
         },
 
@@ -8147,16 +8658,16 @@ function bindSettingsEvents() {
         const originalChunks = library[currentEditingCollection] || {};
 
         // Log chunks with custom weights before saving
-        console.log('💾 Saving chunks to library...');
+        CarrotDebug.ui('Saving chunks to library...');
         Object.entries(modifiedChunks).forEach(([hash, chunk]) => {
             if (chunk.customWeights && Object.keys(chunk.customWeights).length > 0) {
-                console.log(`💾 Saving chunk ${hash} with custom weights:`, chunk.customWeights);
+                CarrotDebug.ui(`Saving chunk ${hash} with custom weights:`, chunk.customWeights);
             }
         });
 
         library[currentEditingCollection] = modifiedChunks;
         saveSettingsDebounced();
-        console.log('💾 Save complete!');
+        CarrotDebug.ui('Save complete!');
 
         // Sync vector database - delete orphaned embeddings
         try {
@@ -8165,11 +8676,11 @@ function bindSettingsEvents() {
             const deletedHashes = [...originalHashes].filter(h => !currentHashes.has(h));
 
             if (deletedHashes.length > 0 && fullsheetRAGLoaded && fullsheetAPI.purgeOrphanedVectors) {
-                console.log(`🥕 Purging ${deletedHashes.length} orphaned vectors from ${currentEditingCollection}`);
+                CarrotDebug.ui(`Purging ${deletedHashes.length} orphaned vectors from ${currentEditingCollection}`);
                 await fullsheetAPI.purgeOrphanedVectors(currentEditingCollection, deletedHashes);
             }
         } catch (error) {
-            console.warn('🥕 Failed to purge orphaned vectors:', error);
+            CarrotDebug.error('Failed to purge orphaned vectors:', error);
             // Don't block save on vector cleanup failure
         }
 
@@ -8267,10 +8778,10 @@ function bindSettingsEvents() {
     
     // Helper for the viewer to get ALL data for a specific level
     function getFullLibraryForLevel(level) {
-        console.log(`[getFullLibraryForLevel] Getting full library for level: ${level}`);
+        CarrotDebug.ui(`Getting full library for level: ${level}`);
         const ragState = extension_settings[extensionName]?.rag;
         if (!ragState?.libraries) {
-            console.log('[getFullLibraryForLevel] No libraries found in ragState.');
+            CarrotDebug.ui('No libraries found in ragState.');
             return {};
         }
 
@@ -8296,22 +8807,22 @@ function bindSettingsEvents() {
 
     // RAG Data Viewer UI
     $(document).on('click', '#carrot-rag-refresh-viewer', function() {
-        console.log('🥕 RAG Viewer: Refresh button clicked.');
+        CarrotDebug.ui('RAG Viewer: Refresh button clicked.');
 
         const ragState = extension_settings[extensionName].rag;
         const viewerContext = $('#carrot_rag_viewer_context').val() || 'global';
-        console.log('🥕 RAG Viewer: Context selected:', viewerContext);
+        CarrotDebug.ui('RAG Viewer: Context selected:', viewerContext);
 
         const library = getFullLibraryForLevel(viewerContext);
-        console.log('🥕 RAG Viewer: Found library:', library);
+        CarrotDebug.ui('RAG Viewer: Found library:', library);
 
         const collections = Object.keys(library);
-        console.log('🥕 RAG Viewer: Found collections:', collections);
+        CarrotDebug.ui('RAG Viewer: Found collections:', collections);
 
         const $list = $('#carrot-rag-collections-list');
 
         if (collections.length === 0) {
-            console.log('🥕 RAG Viewer: No collections found, showing empty state.');
+            CarrotDebug.ui('RAG Viewer: No collections found, showing empty state.');
             $list.html(`<div style="color: #ef4444; padding: 10px; background: rgba(239,68,68,0.1); border-radius: 4px;">No collections saved yet for <strong>${viewerContext}</strong> storage. Generate and save a fullsheet first!</div>`).show();
             $('#carrot-rag-empty-state').hide();
             return;
@@ -8443,16 +8954,16 @@ function bindSettingsEvents() {
                 const collectionId = $(this).data('collection');
                 const currentViewerContext = viewerContext;
 
-                console.log('[Move Collection] Starting move operation', { collectionId, currentViewerContext });
+                CarrotDebug.ui('[Move Collection] Starting move operation', { collectionId, currentViewerContext });
 
                 const selectedContextLevel = await showCopyContextPopup(collectionId, currentViewerContext);
 
                 if (!selectedContextLevel) {
-                    console.log('[Move Collection] User cancelled');
+                    CarrotDebug.ui('[Move Collection] User cancelled');
                     return;
                 }
 
-                console.log('[Move Collection] Target level:', selectedContextLevel);
+                CarrotDebug.ui('[Move Collection] Target level:', selectedContextLevel);
 
                 const ragState = extension_settings[extensionName].rag;
 
@@ -8460,10 +8971,10 @@ function bindSettingsEvents() {
                 const sourceLibrary = getFullLibraryForLevel(currentViewerContext);
                 const chunks = sourceLibrary[collectionId];
 
-                console.log('[Move Collection] Source library chunks:', chunks ? Object.keys(chunks).length : 0);
+                CarrotDebug.ui('[Move Collection] Source library chunks:', chunks ? Object.keys(chunks).length : 0);
 
                 if (!chunks) {
-                    console.error('[Move Collection] Collection not found in source library');
+                    CarrotDebug.error('[Move Collection] Collection not found in source library');
                     toastr.error('Collection not found in source storage');
                     return;
                 }
@@ -8474,10 +8985,10 @@ function bindSettingsEvents() {
                 if (selectedContextLevel === 'character') targetId = targetContext.characterId;
                 if (selectedContextLevel === 'chat') targetId = targetContext.chatId;
 
-                console.log('[Move Collection] Target context ID:', targetId);
+                CarrotDebug.ui('[Move Collection] Target context ID:', targetId);
 
                 if (selectedContextLevel !== 'global' && (targetId === null || targetId === undefined)) {
-                    console.error('[Move Collection] No active context ID for target level');
+                    CarrotDebug.error('[Move Collection] No active context ID for target level');
                     toastr.error(`No active ${selectedContextLevel} to move data to.`);
                     return;
                 }
@@ -8490,22 +9001,22 @@ function bindSettingsEvents() {
                 const targetLib = (selectedContextLevel === 'global') ? ragState.libraries.global : ragState.libraries[selectedContextLevel][targetId];
                 targetLib[collectionId] = JSON.parse(JSON.stringify(chunks));
 
-                console.log('[Move Collection] Copied to target library');
+                CarrotDebug.ui('[Move Collection] Copied to target library');
 
                 // Handle vector embeddings if collection ID changes based on context
                 // We need to move embeddings to the new collection ID
                 try {
                     if (fullsheetRAGLoaded && fullsheetAPI.deleteEntireCollection && fullsheetAPI.apiInsertVectorItems) {
-                        console.log(`[Move Collection] Checking if vector move is needed...`);
+                        CarrotDebug.ui(`[Move Collection] Checking if vector move is needed...`);
 
                         // Note: The collectionId in the library doesn't change, but the actual vector
                         // collection ID might be different based on context. Since we're moving the
                         // chunks as-is with the same collectionId key, the embeddings should already
                         // be accessible via the collection ID. No vector move needed.
-                        console.log(`[Move Collection] Vector embeddings remain at collection: ${collectionId}`);
+                        CarrotDebug.ui(`[Move Collection] Vector embeddings remain at collection: ${collectionId}`);
                     }
                 } catch (error) {
-                    console.warn('[Move Collection] Vector handling warning:', error);
+                    CarrotDebug.error('[Move Collection] Vector handling warning:', error);
                 }
 
                 // Delete from actual source (not the copy returned by getFullLibraryForLevel)
@@ -8517,7 +9028,7 @@ function bindSettingsEvents() {
                             if (allCharLibs[charId][collectionId]) {
                                 delete allCharLibs[charId][collectionId];
                                 deleted = true;
-                                console.log(`[Move Collection] Deleted from character library: ${charId}`);
+                                CarrotDebug.ui(`[Move Collection] Deleted from character library: ${charId}`);
                                 break;
                             }
                         }
@@ -8528,7 +9039,7 @@ function bindSettingsEvents() {
                             if (allChatLibs[chatId][collectionId]) {
                                 delete allChatLibs[chatId][collectionId];
                                 deleted = true;
-                                console.log(`[Move Collection] Deleted from chat library: ${chatId}`);
+                                CarrotDebug.ui(`[Move Collection] Deleted from chat library: ${chatId}`);
                                 break;
                             }
                         }
@@ -8537,26 +9048,26 @@ function bindSettingsEvents() {
                         if (ragState.libraries.global && ragState.libraries.global[collectionId]) {
                             delete ragState.libraries.global[collectionId];
                             deleted = true;
-                            console.log('[Move Collection] Deleted from global library');
+                            CarrotDebug.ui('[Move Collection] Deleted from global library');
                         }
                         break;
                 }
 
                 if (!deleted) {
-                    console.warn('[Move Collection] Failed to delete from source - collection not found in actual source library');
+                    CarrotDebug.error('[Move Collection] Failed to delete from source - collection not found in actual source library');
                 }
 
-                console.log('[Move Collection] Deleted from source library');
+                CarrotDebug.ui('[Move Collection] Deleted from source library');
 
                 saveSettingsDebounced();
 
                 const characterName = getCharacterNameFromCollectionId(collectionId);
                 toastr.success(`Moved ${characterName} from ${currentViewerContext.toUpperCase()} to ${selectedContextLevel.toUpperCase()} storage`);
 
-                console.log('[Move Collection] Move complete, refreshing viewer');
+                CarrotDebug.ui('[Move Collection] Move complete, refreshing viewer');
                 $('#carrot-rag-refresh-viewer').click();
             } catch (error) {
-                console.error('[Move Collection] Error during move operation:', error);
+                CarrotDebug.error('[Move Collection] Error during move operation:', error);
                 toastr.error(`Failed to move collection: ${error.message}`);
             }
         });
@@ -8630,11 +9141,11 @@ function bindSettingsEvents() {
             // Delete vector embeddings from the database
             try {
                 if (fullsheetRAGLoaded && fullsheetAPI.deleteEntireCollection) {
-                    console.log(`🥕 Deleting vector collection: ${collectionId}`);
+                    CarrotDebug.ui(`🥕 Deleting vector collection: ${collectionId}`);
                     await fullsheetAPI.deleteEntireCollection(collectionId);
                 }
             } catch (error) {
-                console.warn('🥕 Failed to delete vector collection:', error);
+                CarrotDebug.error('🥕 Failed to delete vector collection:', error);
                 // Don't block on vector deletion failure
             }
 
@@ -8681,10 +9192,12 @@ function bindSettingsEvents() {
     });
     
     // Character repo toggle
-    $(document).on('click', '.carrot-repo-btn', function() {
+    $(document).on('click', '.carrot-repo-btn', async function() {
         const lorebookName = $(this).data('lorebook');
         const isCurrentlyRepo = characterRepoBooks.has(lorebookName);
+        const isCurrentlyTagLib = tagLibraries.has(lorebookName);
         const $badge = $(this).siblings('.carrot-lorebook-status');
+        const settings = extension_settings[extensionName];
 
         if (isCurrentlyRepo) {
             // Switch from Character Repo to Tag Library
@@ -8698,7 +9211,14 @@ function bindSettingsEvents() {
                 background: 'rgba(33, 150, 243, 0.2)',
                 color: '#90caf9'
             }).html('📚 Tag Lib');
-        } else {
+
+            // Wrap entries if BunnymoTagWrapping is enabled
+            if (settings.bunnymoTagWrapping) {
+                $(this).text('🔄 Wrapping...').prop('disabled', true);
+                await wrapLorebookEntries(lorebookName);
+                $(this).text('📚').prop('disabled', false);
+            }
+        } else if (isCurrentlyTagLib) {
             // Switch from Tag Library to Character Repo
             tagLibraries.delete(lorebookName);
             characterRepoBooks.add(lorebookName);
@@ -8710,6 +9230,31 @@ function bindSettingsEvents() {
                 background: 'rgba(156, 39, 176, 0.2)',
                 color: '#ce93d8'
             }).html('👤 Char Repo');
+
+            // Unwrap entries if BunnymoTagWrapping is enabled
+            if (settings.bunnymoTagWrapping) {
+                $(this).text('🔄 Unwrapping...').prop('disabled', true);
+                await unwrapLorebookEntries(lorebookName);
+                $(this).text('👤').prop('disabled', false);
+            }
+        } else {
+            // Not a repo or tag lib, make it a tag library
+            tagLibraries.add(lorebookName);
+            $(this).removeClass('active')
+                   .css({ background: 'transparent' })
+                   .text('📚');
+            // Update badge
+            $badge.css({
+                background: 'rgba(33, 150, 243, 0.2)',
+                color: '#90caf9'
+            }).html('📚 Tag Lib');
+
+            // Wrap entries if BunnymoTagWrapping is enabled
+            if (settings.bunnymoTagWrapping) {
+                $(this).text('🔄 Wrapping...').prop('disabled', true);
+                await wrapLorebookEntries(lorebookName);
+                $(this).text('📚').prop('disabled', false);
+            }
         }
         updateStatusPanels();
         saveSettings();
@@ -8791,11 +9336,11 @@ function bindSettingsEvents() {
     const PACK_SCAN_DEBOUNCE_MS = 1000; // Prevent rapid clicks
 
     $('#carrot-pack-scan').on('click', async function(event) {
-        console.log('🎯 PACK MANAGER DEBUG: Scan button clicked');
+        CarrotDebug.ui('🎯 PACK MANAGER DEBUG: Scan button clicked');
 
         // Prevent double-clicks and rapid clicking
         if (packScanInProgress) {
-            console.log('⚠️ PACK MANAGER DEBUG: Scan already in progress, ignoring click');
+            CarrotDebug.ui('⚠️ PACK MANAGER DEBUG: Scan already in progress, ignoring click');
             event.preventDefault();
             return false;
         }
@@ -8807,7 +9352,7 @@ function bindSettingsEvents() {
         // Visual feedback that click was registered
         button.addClass('clicked');
 
-        console.log('🎯 PACK MANAGER DEBUG: Button element found:', {
+        CarrotDebug.ui('🎯 PACK MANAGER DEBUG: Button element found:', {
             buttonExists: !!button.length,
             originalText: originalText,
             isDisabled: button.prop('disabled')
@@ -8815,29 +9360,29 @@ function bindSettingsEvents() {
 
         // Check if CarrotPackManager exists
         if (!window.CarrotPackManager) {
-            console.error('❌ PACK MANAGER ERROR: window.CarrotPackManager not found!');
+            CarrotDebug.error('❌ PACK MANAGER ERROR: window.CarrotPackManager not found!');
             $('#carrot-pack-status').html('<p>❌ Pack Manager not initialized. Please refresh the page.</p>');
             return;
         }
 
-        console.log('🎯 PACK MANAGER DEBUG: CarrotPackManager found, checking scanRemotePacks method');
+        CarrotDebug.ui('🎯 PACK MANAGER DEBUG: CarrotPackManager found, checking scanRemotePacks method');
 
         if (typeof window.CarrotPackManager.scanRemotePacks !== 'function') {
-            console.error('❌ PACK MANAGER ERROR: scanRemotePacks method not found!');
+            CarrotDebug.error('❌ PACK MANAGER ERROR: scanRemotePacks method not found!');
             $('#carrot-pack-status').html('<p>❌ Pack Manager scanRemotePacks method missing. Extension may be corrupted.</p>');
             return;
         }
 
-        console.log('🎯 PACK MANAGER DEBUG: Starting pack scan process');
+        CarrotDebug.ui('🎯 PACK MANAGER DEBUG: Starting pack scan process');
 
         button.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin"></i> Scanning...');
         $('#carrot-pack-status').html('<p>🔍 Scanning GitHub repository for available packs...</p><p>📊 Rate-limit aware scanning with automatic retry enabled.</p>');
 
         try {
-            console.log('🎯 PACK MANAGER DEBUG: Calling scanRemotePacks()...');
+            CarrotDebug.ui('🎯 PACK MANAGER DEBUG: Calling scanRemotePacks()...');
             const packs = await window.CarrotPackManager.scanRemotePacks();
 
-            console.log('🎯 PACK MANAGER DEBUG: scanRemotePacks completed successfully:', {
+            CarrotDebug.ui('🎯 PACK MANAGER DEBUG: scanRemotePacks completed successfully:', {
                 packsFound: packs?.length || 0,
                 packs: packs
             });
@@ -8845,9 +9390,9 @@ function bindSettingsEvents() {
             updatePackListUI(packs);
             $('#carrot-pack-status').html(`<p>✅ Found ${packs.length} available packs</p>`);
 
-            console.log('✅ PACK MANAGER DEBUG: Pack scan completed successfully');
+            CarrotDebug.ui('✅ PACK MANAGER DEBUG: Pack scan completed successfully');
         } catch (error) {
-            console.error('❌ PACK MANAGER ERROR: Scan failed:', {
+            CarrotDebug.error('❌ PACK MANAGER ERROR: Scan failed:', {
                 errorMessage: error.message,
                 errorStack: error.stack,
                 errorName: error.name,
@@ -8857,19 +9402,19 @@ function bindSettingsEvents() {
             // Provide user-friendly error messages based on error type
             let userMessage = '';
             if (error.message.includes('rate limit') || error.message.includes('403')) {
-                console.warn('⚠️ PACK MANAGER DEBUG: GitHub rate limit detected');
+                CarrotDebug.error('⚠️ PACK MANAGER DEBUG: GitHub rate limit detected');
                 const retryTime = window.CarrotPackManager?.rateLimitInfo?.resetTime;
                 const waitMinutes = retryTime ? Math.ceil((retryTime - Date.now()) / 60000) : 5;
                 userMessage = `<p>⏳ GitHub API rate limit reached. The extension will automatically retry.</p>
                               <p>🕒 Rate limit resets in approximately ${waitMinutes} minutes.</p>
                               <p>💡 Tip: Try again later or check console for retry progress.</p>`;
             } else if (error.message.includes('network') || error.message.includes('fetch')) {
-                console.warn('⚠️ PACK MANAGER DEBUG: Network error detected');
+                CarrotDebug.error('⚠️ PACK MANAGER DEBUG: Network error detected');
                 userMessage = `<p>🌐 Network error occurred. The extension will automatically retry failed requests.</p>
                               <p>🔄 Check your internet connection and try scanning again.</p>
                               <p>💻 Console shows detailed retry attempts and network status.</p>`;
             } else if (error.message.includes('404')) {
-                console.warn('⚠️ PACK MANAGER DEBUG: GitHub repository not found');
+                CarrotDebug.error('⚠️ PACK MANAGER DEBUG: GitHub repository not found');
                 userMessage = `<p>❌ Pack repository not found (GitHub returned 404).</p>
                               <p>🔗 The repository may have moved or been renamed.</p>
                               <p>💻 Check console for the attempted repository URL.</p>`;
@@ -8885,18 +9430,18 @@ function bindSettingsEvents() {
 
             $('#carrot-pack-status').html(userMessage);
         } finally {
-            console.log('🎯 PACK MANAGER DEBUG: Restoring button state');
+            CarrotDebug.ui('🎯 PACK MANAGER DEBUG: Restoring button state');
             button.prop('disabled', false).html(originalText).removeClass('clicked');
 
             // Reset scan state with debounce delay
             setTimeout(() => {
                 packScanInProgress = false;
-                console.log('🎯 PACK MANAGER DEBUG: Scan debounce period ended');
+                CarrotDebug.ui('🎯 PACK MANAGER DEBUG: Scan debounce period ended');
             }, PACK_SCAN_DEBOUNCE_MS);
         }
     });
 
-    console.log('✅ PACK MANAGER DEBUG: Pack scan button event handler bound successfully');
+    CarrotDebug.repo('✅ Pack scan button event handler bound successfully');
 
     $('#carrot-pack-sync').on('click', async function() {
         const button = $(this);
@@ -8946,7 +9491,8 @@ function bindSettingsEvents() {
 
         // Add buttons to all existing messages after template is set up (only if enabled)
         setTimeout(() => {
-            if (extension_settings[extensionName]?.babyBunnyMode) {
+            // MASTER ENABLE CHECK: Only add buttons if extension AND Baby Bunny are enabled
+            if (extension_settings[extensionName]?.enabled && extension_settings[extensionName]?.babyBunnyMode) {
                 add_baby_bunny_buttons_to_all_existing_messages();
             }
         }, 500);
@@ -8956,13 +9502,15 @@ function bindSettingsEvents() {
     // Only register once to prevent duplicate button additions
     if (!window.CARROT_BUTTON_LISTENERS_REGISTERED) {
         eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, (messageId) => {
-            if (extension_settings[extensionName]?.babyBunnyMode) {
+            // MASTER ENABLE CHECK: Only add buttons if extension AND Baby Bunny are enabled
+            if (extension_settings[extensionName]?.enabled && extension_settings[extensionName]?.babyBunnyMode) {
                 add_baby_bunny_button_to_message(messageId);
             }
         });
 
         eventSource.on(event_types.USER_MESSAGE_RENDERED, (messageId) => {
-            if (extension_settings[extensionName]?.babyBunnyMode) {
+            // MASTER ENABLE CHECK: Only add buttons if extension AND Baby Bunny are enabled
+            if (extension_settings[extensionName]?.enabled && extension_settings[extensionName]?.babyBunnyMode) {
                 add_baby_bunny_button_to_message(messageId);
             }
         });
@@ -8983,7 +9531,7 @@ function bindSettingsEvents() {
             $(document).on('touchend', selector, function(e) {
                 // Don't prevent default - let onclick work naturally
                 // Just ensure the element is tappable
-                console.log('MOBILE DEBUG: Touch event fired for:', selector);
+                CarrotDebug.ui('MOBILE DEBUG: Touch event fired for:', selector);
             });
         });
     }
@@ -9045,7 +9593,7 @@ function initializeMainLorebookPopout() {
 
     // Check if popout template exists
     if ($('#zoomed_avatar_template').length === 0) {
-        console.error('🥕 Popout template not found - popout feature disabled');
+        CarrotDebug.error('Popout template not found - popout feature disabled');
         return;
     }
 
@@ -9117,7 +9665,7 @@ function initializeMainLorebookPopout() {
 
     $mainLorebookPopout.append(contentWrapper);
 
-    console.log('🥕 Main lorebook popout initialized');
+    CarrotDebug.ui('🥕 Main lorebook popout initialized');
 }
 
 function openMainLorebookPopout() {
@@ -9227,7 +9775,7 @@ function openMainLorebookPopout() {
     $mainLorebookPopout.fadeIn(animation_duration);
     mainLorebookPopoutVisible = true;
 
-    console.log('🥕 Main lorebook popout opened');
+    CarrotDebug.ui('🥕 Main lorebook popout opened');
 }
 
 function closeMainLorebookPopout() {
@@ -9285,7 +9833,7 @@ function closeMainLorebookPopout() {
         $backdrop.remove();
         $mainLorebookPopout = null;
 
-        console.log('🥕 Main lorebook popout closed');
+        CarrotDebug.ui('🥕 Main lorebook popout closed');
     });
 
     mainLorebookPopoutVisible = false;
@@ -9408,7 +9956,7 @@ function updatePackListUI(packs) {
                 button.prop('disabled', false).text(originalText);
             }
         } catch (error) {
-            console.error('Pack operation failed:', error);
+            CarrotDebug.error('Pack operation failed:', error);
             button.prop('disabled', false).text(originalText);
         }
     });
@@ -9426,12 +9974,12 @@ function updatePackListUI(packs) {
 
 
 // 🥕 WB TRACKER DEBUG - WORLD INFO ENTRY TRIGGER DEBUGGING
-console.log('🥕 WB TRACKER DEBUG: Setting up world info trigger debugging...');
+CarrotDebug.ui('Setting up world info trigger debugging...');
 
 document.addEventListener('click', function(e) {
     // Log ALL clicks to see what's happening (only in debug mode)
     if (extension_settings[extensionName]?.debugMode) {
-        console.log('🥕 WB TRACKER DEBUG: Click detected on element:', {
+        CarrotDebug.ui('Click detected on element:', {
             tagName: e.target.tagName,
             className: e.target.className,
             classList: Array.from(e.target.classList),
@@ -9446,10 +9994,10 @@ document.addEventListener('click', function(e) {
                         (e.target.classList.contains('ck-trigger') && e.target.textContent?.includes('🥕'));
 
     if (isCarrotIcon) {
-        console.log('🥕 WORLDBOOK TRACKER: Carrot clicked - trying to open WorldBook tracker panel...');
+        CarrotDebug.ui('Carrot clicked - trying to open WorldBook tracker panel...');
 
         // Check if CarrotKernel has a function to open the tracker
-        console.log('🥕 TRACKER DEBUG: Checking for CarrotKernel tracker functions...');
+        CarrotDebug.ui('Checking for CarrotKernel tracker functions...');
         const carrotFunctions = {
             CarrotKernel: typeof window.CarrotKernel,
             openTracker: typeof window.CarrotKernel?.openTracker,
@@ -9458,51 +10006,51 @@ document.addEventListener('click', function(e) {
             showWorldBookTracker: typeof window.CarrotKernel?.showWorldBookTracker,
             popup: typeof window.CarrotKernel?.showPopup
         };
-        console.log('🥕 TRACKER DEBUG: Available CarrotKernel functions:', carrotFunctions);
+        CarrotDebug.ui('Available CarrotKernel functions:', carrotFunctions);
 
         // Try to find and call the tracker opening function
         if (window.CarrotKernel) {
-            console.log('🥕 TRACKER DEBUG: CarrotKernel object found, trying to open tracker...');
+            CarrotDebug.ui('CarrotKernel object found, trying to open tracker...');
 
             // Method 1: Try showPopup with proper parameters
             if (window.CarrotKernel.showPopup) {
-                console.log('🥕 TRACKER OPEN: Trying CarrotKernel.showPopup with proper parameters...');
+                CarrotDebug.ui('Trying CarrotKernel.showPopup with proper parameters...');
                 try {
                     // Call showPopup with title and content parameters
                     window.CarrotKernel.showCarrotPopup('WorldBook Tracker', '<div class="worldbook-tracker">Loading tracker...</div>');
-                    console.log('✅ TRACKER OPEN: showPopup called successfully');
+                    CarrotDebug.ui('showPopup called successfully');
                 } catch (error) {
-                    console.log('❌ TRACKER OPEN: showPopup failed:', error);
+                    CarrotDebug.error('showPopup failed:', error);
                 }
             }
 
             // Method 2: Try openTracker
             if (window.CarrotKernel.openTracker) {
-                console.log('🥕 TRACKER OPEN: Trying CarrotKernel.openTracker...');
+                CarrotDebug.ui('Trying CarrotKernel.openTracker...');
                 try {
                     window.CarrotKernel.openTracker();
-                    console.log('✅ TRACKER OPEN: openTracker called successfully');
+                    CarrotDebug.ui('openTracker called successfully');
                 } catch (error) {
-                    console.log('❌ TRACKER OPEN: openTracker failed:', error);
+                    CarrotDebug.error('openTracker failed:', error);
                 }
             }
 
             // Method 3: Try direct popup call with tracker content
             if (window.CarrotKernel.showPopup && window.CarrotKernel.generateTrackerHTML) {
-                console.log('🥕 TRACKER OPEN: Trying to generate and show tracker HTML...');
+                CarrotDebug.ui('Trying to generate and show tracker HTML...');
                 try {
                     const trackerHTML = window.CarrotKernel.generateTrackerHTML();
                     window.CarrotKernel.showCarrotPopup('WorldBook Tracker', trackerHTML);
-                    console.log('✅ TRACKER OPEN: Tracker HTML generated and shown');
+                    CarrotDebug.ui('Tracker HTML generated and shown');
                 } catch (error) {
-                    console.log('❌ TRACKER OPEN: Tracker HTML generation failed:', error);
+                    CarrotDebug.error('Tracker HTML generation failed:', error);
                 }
             }
 
             // Method 4: Look for any CarrotKernel methods that might open the tracker
-            console.log('🥕 TRACKER DEBUG: All CarrotKernel methods:', Object.getOwnPropertyNames(window.CarrotKernel));
+            CarrotDebug.ui('All CarrotKernel methods:', Object.getOwnPropertyNames(window.CarrotKernel));
         } else {
-            console.log('❌ TRACKER DEBUG: CarrotKernel object not found on window');
+            CarrotDebug.error('CarrotKernel object not found on window');
         }
 
         // Check if the specific ck-panel tracker exists and populate it
@@ -9511,42 +10059,42 @@ document.addEventListener('click', function(e) {
             const ckContent = document.querySelector('.ck-panel .ck-content');
             const ckBadge = document.querySelector('.ck-panel .ck-header__badge');
 
-            console.log('🥕 PANEL CHECK: ck-panel exists?', !!ckPanel);
-            console.log('🥕 PANEL CHECK: ck-content exists?', !!ckContent);
-            console.log('🥕 PANEL CHECK: ck-badge exists?', !!ckBadge);
+            CarrotDebug.ui('🥕 PANEL CHECK: ck-panel exists?', !!ckPanel);
+            CarrotDebug.ui('🥕 PANEL CHECK: ck-content exists?', !!ckContent);
+            CarrotDebug.ui('🥕 PANEL CHECK: ck-badge exists?', !!ckBadge);
 
             if (ckPanel && ckContent) {
-                console.log('✅ PANEL FOUND: CarrotKernel tracker panel exists');
-                console.log('🥕 PANEL STATUS: Badge shows:', ckBadge?.textContent);
-                console.log('🥕 PANEL STATUS: Content empty?', ckContent.innerHTML.trim() === '');
+                CarrotDebug.ui('✅ PANEL FOUND: CarrotKernel tracker panel exists');
+                CarrotDebug.ui('🥕 PANEL STATUS: Badge shows:', ckBadge?.textContent);
+                CarrotDebug.ui('🥕 PANEL STATUS: Content empty?', ckContent.innerHTML.trim() === '');
 
                 // Try to populate the tracker content
-                console.log('🥕 POPULATE: Attempting to populate tracker...');
+                CarrotDebug.ui('🥕 POPULATE: Attempting to populate tracker...');
 
                 // Check if there's a populate function
                 if (window.CarrotKernel && window.CarrotKernel.populateTracker) {
-                    console.log('🥕 POPULATE: Trying CarrotKernel.populateTracker...');
+                    CarrotDebug.ui('🥕 POPULATE: Trying CarrotKernel.populateTracker...');
                     try {
                         window.CarrotKernel.populateTracker();
-                        console.log('✅ POPULATE: populateTracker called');
+                        CarrotDebug.ui('✅ POPULATE: populateTracker called');
                     } catch (error) {
-                        console.log('❌ POPULATE: populateTracker failed:', error);
+                        CarrotDebug.ui('❌ POPULATE: populateTracker failed:', error);
                     }
                 }
 
                 // Check if there's an update function
                 if (window.CarrotKernel && window.CarrotKernel.updateTracker) {
-                    console.log('🥕 POPULATE: Trying CarrotKernel.updateTracker...');
+                    CarrotDebug.ui('🥕 POPULATE: Trying CarrotKernel.updateTracker...');
                     try {
                         window.CarrotKernel.updateTracker();
-                        console.log('✅ POPULATE: updateTracker called');
+                        CarrotDebug.ui('✅ POPULATE: updateTracker called');
                     } catch (error) {
-                        console.log('❌ POPULATE: updateTracker failed:', error);
+                        CarrotDebug.ui('❌ POPULATE: updateTracker failed:', error);
                     }
                 }
 
             } else {
-                console.log('❌ PANEL NOT FOUND: CarrotKernel tracker panel does not exist');
+                CarrotDebug.ui('❌ PANEL NOT FOUND: CarrotKernel tracker panel does not exist');
             }
         }, 300);
     }

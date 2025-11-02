@@ -80,7 +80,7 @@ function ensureRagState() {
     // This would destroy all user settings on page refresh
     if (!extension_settings[extensionName]) {
         // Only initialize if it truly doesn't exist (first-time setup)
-        console.warn('⚠️ RAG: extension_settings[extensionName] does not exist - initializing empty object. This should only happen on first load.');
+        // Removed console.warn - initialization is silent
         extension_settings[extensionName] = {};
     }
     if (!extension_settings[extensionName].rag) {
@@ -355,7 +355,7 @@ async function getAdditionalVectorArgs(items) {
 function ensureVectorConfig() {
     const vectors = getVectorSettings();
     if (vectorApiSourcesRequiringUrl.includes(vectors.source) && !vectors.use_alt_endpoint && !vectors.alt_endpoint_url) {
-        console.warn(`CarrotKernel RAG: Source "${vectors.source}" usually needs a server URL. Set one in the Vectors extension if you see embedding errors.`);
+        CarrotDebug.error(`CarrotKernel RAG: Source "${vectors.source}" usually needs a server URL. Set one in the Vectors extension if you see embedding errors.`);
     }
 }
 
@@ -510,7 +510,7 @@ async function apiDeleteCollection(collectionId) {
  * @returns {Promise<void>}
  */
 async function updateChunksInLibrary(collectionId, chunks) {
-    console.log('📝 [updateChunksInLibrary] Starting update...', {
+    CarrotDebug.ui('📝 [updateChunksInLibrary] Starting update...', {
         collectionId,
         chunkCount: Object.keys(chunks).length
     });
@@ -529,7 +529,7 @@ async function updateChunksInLibrary(collectionId, chunks) {
         const existingChunk = library[collectionId][hash];
 
         if (!existingChunk) {
-            console.warn(`⚠️ Chunk ${hash} not found in library - skipping`);
+            CarrotDebug.error(`⚠️ Chunk ${hash} not found in library - skipping`);
             continue;
         }
 
@@ -541,7 +541,7 @@ async function updateChunksInLibrary(collectionId, chunks) {
         const textChanged = existingChunk.text !== chunkText;
 
         if (textChanged) {
-            console.log(`🔄 Text changed for chunk ${hash} - will re-vectorize`);
+            CarrotDebug.ui(`🔄 Text changed for chunk ${hash} - will re-vectorize`);
             chunksToRevectorize.push({
                 hash: parseInt(hash),
                 text: chunkText,
@@ -567,27 +567,27 @@ async function updateChunksInLibrary(collectionId, chunks) {
 
     // Save updated library to extension_settings
     saveSettingsDebounced();
-    console.log(`✅ Updated ${updatedHashes.length} chunks in library`);
+    CarrotDebug.ui(`✅ Updated ${updatedHashes.length} chunks in library`);
 
     // Re-vectorize chunks with changed text
     if (chunksToRevectorize.length > 0) {
-        console.log(`🔬 Re-vectorizing ${chunksToRevectorize.length} chunks with text changes...`);
+        CarrotDebug.ui(`🔬 Re-vectorizing ${chunksToRevectorize.length} chunks with text changes...`);
 
         try {
             // Delete old vectors
             const hashesToDelete = chunksToRevectorize.map(c => c.hash);
             await apiDeleteVectorHashes(collectionId, hashesToDelete);
-            console.log(`🗑️  Deleted ${hashesToDelete.length} old vectors`);
+            CarrotDebug.ui(`🗑️  Deleted ${hashesToDelete.length} old vectors`);
 
             // Insert new vectors with updated text
             const itemsToInsert = chunksToRevectorize;
 
             await apiInsertVectorItems(collectionId, itemsToInsert);
-            console.log(`✅ Re-vectorized ${itemsToInsert.length} chunks`);
+            CarrotDebug.ui(`✅ Re-vectorized ${itemsToInsert.length} chunks`);
 
             toastr.success(`Updated ${updatedHashes.length} chunks (${chunksToRevectorize.length} re-vectorized)`);
         } catch (error) {
-            console.error('❌ Re-vectorization failed:', error);
+            CarrotDebug.error('❌ Re-vectorization failed:', error);
             toastr.error(`Failed to re-vectorize chunks: ${error.message}`);
             throw error;
         }
@@ -595,7 +595,7 @@ async function updateChunksInLibrary(collectionId, chunks) {
         toastr.success(`Updated ${updatedHashes.length} chunks`);
     }
 
-    console.log('✅ [updateChunksInLibrary] Update complete');
+    CarrotDebug.ui('✅ [updateChunksInLibrary] Update complete');
 }
 
 // ============================================================================
@@ -643,10 +643,12 @@ function saveRAGSettings(ragSettings) {
  * Debug logging helper
  */
 function debugLog(message, data = null) {
-    const settings = getRAGSettings();
-    if (settings.debugMode) {
-        console.log(`🔍 [CarrotKernel RAG] ${message}`, data || '');
-    }
+    // Check BOTH extension enabled AND debug mode
+    const mainSettings = extension_settings[extensionName];
+    if (!mainSettings?.enabled) return; // Extension disabled - no logs
+    if (!mainSettings?.debugMode) return; // Debug mode off - no logs (use MAIN debug mode, not RAG-specific)
+
+    CarrotDebug.ui(`🔍 [CarrotKernel RAG] ${message}`, data || '');
 }
 
 // ============================================================================
@@ -1059,7 +1061,7 @@ function extractKeywords(text, sectionTitle = '', topic = '') {
         .slice(0, 12) // Limit to top 12
         .map(k => k.word);
 
-    console.log('🔍 [extractKeywords] Keyword extraction:', {
+    CarrotDebug.ui('🔍 [extractKeywords] Keyword extraction:', {
         section: sectionTitle,
         totalCandidates: weightedKeywords.size,
         afterFiltering: filteredKeywords.length,
@@ -1573,7 +1575,7 @@ function buildDefaultKeywordMetadata(sectionTitle, topic, chunkText, tags) {
                 }
 
                 matchedEnglishSection = sectionKey;
-                console.log(`📚 [English Bank] Matched "${sectionKey}" in section "${sectionTitle}" (topic: ${topic}) - added ${data.keywords.length} keywords + ${data.regexes?.length || 0} regexes at weight ${data.weight}`);
+                CarrotDebug.ui(`📚 [English Bank] Matched "${sectionKey}" in section "${sectionTitle}" (topic: ${topic}) - added ${data.keywords.length} keywords + ${data.regexes?.length || 0} regexes at weight ${data.weight}`);
                 break; // Only match one section
             }
         }
@@ -1680,7 +1682,7 @@ function getWordStem(word) {
  * 4. Leave simple keywords as plain keywords (NO unintelligent suffix guessing)
  */
 function convertKeywordsToRegex(keywords) {
-    console.log('🔍 [convertKeywordsToRegex] Input:', { count: keywords.length, keywords: keywords });
+    CarrotDebug.ui('🔍 [convertKeywordsToRegex] Input:', { count: keywords.length, keywords: keywords });
 
     const regexPatterns = [];
     const used = new Set();
@@ -1763,7 +1765,7 @@ function convertKeywordsToRegex(keywords) {
                 source: 'word-family',
             });
 
-            console.log(`🔍 Created word family regex: /${pattern}/i from:`, words, `(bare root: ${hasBareRoot})`);
+            CarrotDebug.ui(`🔍 Created word family regex: /${pattern}/i from:`, words, `(bare root: ${hasBareRoot})`);
         }
     }
 
@@ -1818,7 +1820,7 @@ function convertKeywordsToRegex(keywords) {
         .filter((_, i) => !used.has(i))
         .map(kw => kw.toLowerCase());
 
-    console.log('🔍 [convertKeywordsToRegex] Output:', {
+    CarrotDebug.ui('🔍 [convertKeywordsToRegex] Output:', {
         regexCount: regexPatterns.length,
         regexes: regexPatterns.map(r => `/${r.pattern}/${r.flags} (${r.source})`),
         remainingCount: remainingKeywords.length,
@@ -1930,7 +1932,7 @@ function buildChunkMetadata(sectionTitle, topic, chunkText, tags, characterName 
     // Convert keywords to regex patterns for flexible matching
     const { keywords: remainingKeywords, regexes: autoRegexes } = convertKeywordsToRegex(allKeywords);
 
-    console.log('🔍 [buildChunkMetadata] Keyword conversion results:', {
+    CarrotDebug.ui('🔍 [buildChunkMetadata] Keyword conversion results:', {
         totalInputKeywords: allKeywords.length,
         inputKeywords: allKeywords,
         remainingKeywords: remainingKeywords,
@@ -1947,7 +1949,7 @@ function buildChunkMetadata(sectionTitle, topic, chunkText, tags, characterName 
         ...regexStrings         // Regex patterns as /pattern/flags strings
     ];
 
-    console.log('🔍 [buildChunkMetadata] Final systemKeywords:', systemKeywords);
+    CarrotDebug.ui('🔍 [buildChunkMetadata] Final systemKeywords:', systemKeywords);
 
     // Store regex objects separately for programmatic access
     const keywordRegex = [
@@ -2005,10 +2007,10 @@ function applyAutomaticLinks(chunks) {
             // Determine link mode based on frequency
             if (count >= FORCE_LINK_THRESHOLD) {
                 links.push({ targetHash, mode: 'force' });
-                console.log(`🔗 [AutoLink] FORCE link: ${chunk.metadata.section} → ${mentionedSection} (${count} mentions)`);
+                CarrotDebug.ui(`🔗 [AutoLink] FORCE link: ${chunk.metadata.section} → ${mentionedSection} (${count} mentions)`);
             } else if (count >= SOFT_LINK_THRESHOLD) {
                 links.push({ targetHash, mode: 'soft' });
-                console.log(`🔗 [AutoLink] SOFT link: ${chunk.metadata.section} → ${mentionedSection} (${count} mentions)`);
+                CarrotDebug.ui(`🔗 [AutoLink] SOFT link: ${chunk.metadata.section} → ${mentionedSection} (${count} mentions)`);
             }
         }
 
@@ -2158,7 +2160,7 @@ function stripTagSynthesis(content) {
     const subsectionTagSynthesisRegex = /^##\s*🎯\*\*[^*]+\*\*🎯.*?(?=^##\s+|^#\s+|\s*$)/gims;
     cleaned = cleaned.replace(subsectionTagSynthesisRegex, '');
 
-    console.log('🚫 [stripTagSynthesis] Excluded TAG SYNTHESIS section from chunking');
+    CarrotDebug.ui('🚫 [stripTagSynthesis] Excluded TAG SYNTHESIS section from chunking');
     return cleaned;
 }
 
@@ -2232,7 +2234,7 @@ function chunkFullsheetSimple(content, characterName) {
     const totalContentLength = normalized.length;
     const capturedLength = capturedRanges.reduce((sum, range) => sum + (range.end - range.start), 0);
     if (capturedLength < totalContentLength * 0.9) { // If we missed more than 10% of content
-        console.warn(`⚠️ Simple chunking may have missed content: Captured ${capturedLength}/${totalContentLength} chars (${Math.round(capturedLength/totalContentLength*100)}%)`);
+        CarrotDebug.error(`⚠️ Simple chunking may have missed content: Captured ${capturedLength}/${totalContentLength} chars (${Math.round(capturedLength/totalContentLength*100)}%)`);
     }
 
     debugLog(`Simple chunking: Found ${sections.length} sections, captured ${capturedLength}/${totalContentLength} chars`);
@@ -2994,7 +2996,7 @@ async function queryRAG(characterName, queryText) {
 
     const queryKeywords = extractKeywords(queryText);
 
-    console.log('🔑 [CarrotKernel RAG] Extracted keywords from query:', queryKeywords);
+    CarrotDebug.ui('🔑 [CarrotKernel RAG] Extracted keywords from query:', queryKeywords);
 
     // ============================================================================
     // COLLECTION ACTIVATION SYSTEM
@@ -3006,7 +3008,7 @@ async function queryRAG(characterName, queryText) {
     const queryLower = queryText.toLowerCase();
     const queryWords = queryLower.split(/\s+/); // Split into words for whole-word matching
 
-    console.log('🔍 [CarrotKernel RAG] Query analysis:', {
+    CarrotDebug.ui('🔍 [CarrotKernel RAG] Query analysis:', {
         queryLower: queryLower.substring(0, 100),
         wordCount: queryWords.length,
         firstFewWords: queryWords.slice(0, 10)
@@ -3032,13 +3034,13 @@ async function queryRAG(characterName, queryText) {
 
         // Legacy collections without metadata won't activate (user needs to set triggers)
         if (!metadata) {
-            console.log(`⚠️ [CarrotKernel RAG] Collection ${collectionId} has no metadata - skipping`);
+            CarrotDebug.ui(`⚠️ [CarrotKernel RAG] Collection ${collectionId} has no metadata - skipping`);
             continue;
         }
 
         // Check if collection is always active (ignores triggers)
         if (metadata.alwaysActive) {
-            console.log(`✅ [CarrotKernel RAG] Collection ${collectionId} is ALWAYS ACTIVE - activating`);
+            CarrotDebug.ui(`✅ [CarrotKernel RAG] Collection ${collectionId} is ALWAYS ACTIVE - activating`);
             activatedCollections.add(collectionId);
             continue;
         }
@@ -3046,14 +3048,14 @@ async function queryRAG(characterName, queryText) {
         // Check if any activation triggers match (case-insensitive)
         const triggers = metadata.keywords || []; // NOTE: Still called 'keywords' in data for backwards compatibility
 
-        console.log(`🔍 [CarrotKernel RAG] Checking collection ${collectionId}:`, {
+        CarrotDebug.ui(`🔍 [CarrotKernel RAG] Checking collection ${collectionId}:`, {
             triggers: triggers,
             triggerCount: triggers.length
         });
 
         // No triggers = collection won't activate (user must explicitly set triggers or enable "Always Active")
         if (triggers.length === 0) {
-            console.log(`⚠️ [CarrotKernel RAG] Collection ${collectionId} has no triggers - skipping`);
+            CarrotDebug.ui(`⚠️ [CarrotKernel RAG] Collection ${collectionId} has no triggers - skipping`);
             continue;
         }
 
@@ -3063,7 +3065,7 @@ async function queryRAG(characterName, queryText) {
             const triggerLower = trigger.toLowerCase().trim();
             // Support both substring and whole-word matching
             if (queryLower.includes(triggerLower)) {
-                console.log(`✅ [CarrotKernel RAG] Collection ${collectionId} activated! Trigger "${trigger}" found in query`);
+                CarrotDebug.ui(`✅ [CarrotKernel RAG] Collection ${collectionId} activated! Trigger "${trigger}" found in query`);
                 activatedCollections.add(collectionId);
                 matched = true;
                 break;
@@ -3071,7 +3073,7 @@ async function queryRAG(characterName, queryText) {
         }
 
         if (!matched) {
-            console.log(`❌ [CarrotKernel RAG] Collection ${collectionId} NOT activated - no triggers matched`);
+            CarrotDebug.ui(`❌ [CarrotKernel RAG] Collection ${collectionId} NOT activated - no triggers matched`);
         }
     }
 
@@ -3121,21 +3123,7 @@ async function queryRAG(characterName, queryText) {
 
                         const response = await apiQueryCollection(currentCollectionId, queryText, settings.topK, settings.scoreThreshold);
 
-                        // Debug: Log raw response to see what we're actually getting
-                        console.log('🔍 RAG SCORE DEBUG: Raw vector DB response:', {
-                            collectionId: currentCollectionId,
-                            response: response,
-                            hasScores: response?.scores ? 'YES' : 'NO',
-                            hasSimilarities: response?.similarities ? 'YES' : 'NO',
-                            hasMetadata: response?.metadata ? 'YES' : 'NO',
-                            responseKeys: Object.keys(response || {}),
-                            metadataLength: response?.metadata?.length || 0,
-                            firstMetadata: response?.metadata?.[0],
-                            hashesLength: response?.hashes?.length || 0,
-                            scoresArray: response?.scores,
-                            similaritiesArray: response?.similarities
-                        });
-
+                        // Spam log removed - logged on every RAG query
                         const metadata = Array.isArray(response?.metadata) ? response.metadata : [];
                         const hashes = Array.isArray(response?.hashes) ? response.hashes : [];
                         const scores = Array.isArray(response?.scores) ? response.scores : (Array.isArray(response?.similarities) ? response.similarities : []);
@@ -3149,17 +3137,18 @@ async function queryRAG(characterName, queryText) {
                             // Score can come from: metadata[i].score, scores array, or similarities array
                             const score = meta.score ?? scores[i] ?? null;
 
-                            console.log(`🔍 RAG SCORE DEBUG: Chunk ${i} score=${score}, meta.score=${meta.score}, scores[${i}]=${scores[i]}`);
+                            // Spam logs removed - logged for EVERY chunk in query results
 
                             // ⚠️ CRITICAL: Enforce scoreThreshold client-side
                             // If score is null/0, we can't filter properly - warn but allow through
                             if (score !== null && score < settings.scoreThreshold) {
-                                console.log(`🔍 RAG SCORE DEBUG: Filtered out chunk ${i} - score ${score} below threshold ${settings.scoreThreshold}`);
+                                // Spam log removed - logged for every filtered chunk
                                 continue;
                             }
 
+                            // Keep warning for null/zero scores as it indicates a config issue
                             if (score === null || score === 0) {
-                                console.warn(`⚠️ RAG WARNING: Chunk ${i} has null/zero score - cannot filter by threshold. Check vector DB configuration.`);
+                                CarrotDebug.error(`⚠️ RAG WARNING: Chunk ${i} has null/zero score - cannot filter by threshold. Check vector DB configuration.`);
                             }
 
                             const entry = libraryEntryToChunk(hash, library[currentCollectionId][hash], {
@@ -3177,7 +3166,7 @@ async function queryRAG(characterName, queryText) {
                         debugLog(`Queried ${currentCollectionId} in ${libName}: found ${chunks.length} chunks`);
                         return { libName: `${libName}:${currentCollectionId}`, chunks, library: library[currentCollectionId] };
                     } catch (error) {
-                        console.error(`Failed to query ${currentCollectionId} in ${libName} library:`, error);
+                        CarrotDebug.error(`Failed to query ${currentCollectionId} in ${libName} library:`, error);
                         return { libName: `${libName}:${currentCollectionId}`, chunks: [] };
                     }
                 })()
@@ -3350,7 +3339,7 @@ async function queryRAG(characterName, queryText) {
 
         // Apply keyword weight boosts to all chunks before ranking
         // This combines semantic similarity scores with custom keyword weights
-        console.log('🎯 [CarrotKernel RAG] Applying keyword weight boosts...');
+        CarrotDebug.ui('🎯 [CarrotKernel RAG] Applying keyword weight boosts...');
         for (const chunk of finalResults) {
             const libraryEntry = mergedLibrary[chunk.hash];
             if (!libraryEntry) continue;
@@ -3368,12 +3357,7 @@ async function queryRAG(characterName, queryText) {
                 score: boostedScore, // Final score used for ranking
             };
 
-            if (matches.length > 0) {
-                console.log(`  📊 Chunk ${chunk.hash} (${chunk.header || 'unknown'}): semantic=${semanticScore.toFixed(3)}, keywordBoost=${keywordBoost}, final=${boostedScore.toFixed(3)}`);
-                console.log(`     Matched keywords:`, matches);
-            } else {
-                console.log(`  📊 Chunk ${chunk.hash} (${chunk.header || 'unknown'}): semantic=${semanticScore.toFixed(3)}, no keyword matches, final=${boostedScore.toFixed(3)}`);
-            }
+            // Spam logs removed - logged for EVERY chunk in results
         }
 
         // Sort by boosted score (highest first) before limiting
@@ -3385,7 +3369,7 @@ async function queryRAG(characterName, queryText) {
 
         // Apply global topK limit if we have too many results
         if (finalResults.length > settings.topK) {
-            console.log(`🔍 RAG LIMITING: Trimming ${finalResults.length} results down to topK=${settings.topK}`);
+            CarrotDebug.ui(`🔍 RAG LIMITING: Trimming ${finalResults.length} results down to topK=${settings.topK}`);
             finalResults = finalResults.slice(0, settings.topK);
         }
 
@@ -3404,7 +3388,7 @@ async function queryRAG(characterName, queryText) {
 
         return finalResults;
     } catch (error) {
-        console.error(`Failed to query RAG for ${characterName}:`, error);
+        CarrotDebug.error(`Failed to query RAG for ${characterName}:`, error);
         return [];
     }
 }
@@ -3438,7 +3422,7 @@ function buildQueryContext(messageCount = 3) {
         .join('\n\n');
 
     // Enhanced debug logging
-    console.log('🔍 [CarrotKernel RAG] Building query context:', {
+    CarrotDebug.ui('🔍 [CarrotKernel RAG] Building query context:', {
         totalMessages: chat.length,
         activeMessages: activeMessages.length,
         selectedMessages: recentMessages.length,
@@ -3448,7 +3432,7 @@ function buildQueryContext(messageCount = 3) {
 
     // Log each selected message for debugging
     recentMessages.forEach((msg, idx) => {
-        console.log(`📝 [CarrotKernel RAG] Message ${idx + 1}/${recentMessages.length}:`, {
+        CarrotDebug.ui(`📝 [CarrotKernel RAG] Message ${idx + 1}/${recentMessages.length}:`, {
             name: msg.name,
             is_user: msg.is_user,
             is_system: msg.is_system,
@@ -3456,7 +3440,7 @@ function buildQueryContext(messageCount = 3) {
         });
     });
 
-    console.log('📋 [CarrotKernel RAG] Final queryText:', queryText);
+    CarrotDebug.ui('📋 [CarrotKernel RAG] Final queryText:', queryText);
 
     return queryText;
 }
@@ -3559,71 +3543,71 @@ async function injectRAGResults(characterName, results) {
     });
 
     if (settings.debugMode) {
-        console.log('[CarrotKernel RAG] Injection', { characterName, injectedChunks: uniqueChunks.length });
-        console.log(formatted);
+        CarrotDebug.ui('[CarrotKernel RAG] Injection', { characterName, injectedChunks: uniqueChunks.length });
+        CarrotDebug.ui(formatted);
     }
 }
 
 function detectFullsheetInMessage(messageText) {
-    console.log('🔍 [detectFullsheetInMessage] Starting detection...');
-    console.log(`   Message length: ${messageText?.length || 0} chars`);
-    console.log(`   Min size required: ${FULLSHEET_MIN_SIZE}`);
+    CarrotDebug.ui('🔍 [detectFullsheetInMessage] Starting detection...');
+    CarrotDebug.ui(`   Message length: ${messageText?.length || 0} chars`);
+    CarrotDebug.ui(`   Min size required: ${FULLSHEET_MIN_SIZE}`);
 
     // Very permissive - if there's ANY structured content, try to parse it
     if (!messageText || messageText.length < 1000) {
-        console.log('❌ [detectFullsheetInMessage] Message too short or empty');
+        CarrotDebug.ui('❌ [detectFullsheetInMessage] Message too short or empty');
         return null;
     }
 
     // Check for section headers with pattern - VERY PERMISSIVE & LANGUAGE-AGNOSTIC
-    console.log('🔍 [detectFullsheetInMessage] Looking for numbered section headers...');
-    console.log(`   Pattern: [##] [ANY-WORD] number/number (works for all languages)`);
-    console.log(`   Examples: "## SECTION 1/8", "##セクション 1/8", "# 部分 1/8", "SECCIÓN 1/8"`);
-    console.log(`   Message sample:`, messageText.substring(0, 500));
+    CarrotDebug.ui('🔍 [detectFullsheetInMessage] Looking for numbered section headers...');
+    CarrotDebug.ui(`   Pattern: [##] [ANY-WORD] number/number (works for all languages)`);
+    CarrotDebug.ui(`   Examples: "## SECTION 1/8", "##セクション 1/8", "# 部分 1/8", "SECCIÓN 1/8"`);
+    CarrotDebug.ui(`   Message sample:`, messageText.substring(0, 500));
 
     // Match any header with format - allows with/without ##, with/without colon, spaces around /
     // \S+ matches ANY non-whitespace characters (Chinese/Japanese/Korean/Arabic/Cyrillic/etc.)
     const sectionMatches = messageText.match(/^#{0,2}\s*\S+\s+\d+\s*\/\s*\d+/gim);
-    console.log(`   Found ${sectionMatches?.length || 0} numbered section headers`);
+    CarrotDebug.ui(`   Found ${sectionMatches?.length || 0} numbered section headers`);
     if (sectionMatches) {
-        console.log(`   Matches:`, sectionMatches);
+        CarrotDebug.ui(`   Matches:`, sectionMatches);
     }
 
     // Check for BunnymoTags - UNIVERSAL & LANGUAGE-AGNOSTIC
-    console.log('🔍 [detectFullsheetInMessage] Looking for BunnymoTags...');
-    console.log(`   Checking for tag structure <TAG:content> (works for ALL languages)`);
-    console.log(`   Examples: <NAME:John>, <名前:太郎>, <NOMBRE:Juan>, <ИМЯ:Иван>`);
+    CarrotDebug.ui('🔍 [detectFullsheetInMessage] Looking for BunnymoTags...');
+    CarrotDebug.ui(`   Checking for tag structure <TAG:content> (works for ALL languages)`);
+    CarrotDebug.ui(`   Examples: <NAME:John>, <名前:太郎>, <NOMBRE:Juan>, <ИМЯ:Иван>`);
 
     // [^\s>]+ matches ANY non-whitespace non-> characters (works for all Unicode)
     const tagMatches = messageText.match(/<[^\s>]+:[^>]+>/g);
     const tagCount = tagMatches ? tagMatches.length : 0;
-    console.log(`   Found ${tagCount} tags with format <TAG:content>`);
+    CarrotDebug.ui(`   Found ${tagCount} tags with format <TAG:content>`);
 
     // VERY PERMISSIVE: Need either 2+ sections OR 3+ tags
     const hasSections = sectionMatches && sectionMatches.length >= 2;
     const hasTags = tagCount >= 3;
 
-    console.log(`   Has sufficient sections: ${hasSections} (${sectionMatches?.length || 0} found, need 2+)`);
-    console.log(`   Has sufficient tags: ${hasTags} (${tagCount} found, need 3+)`);
+    CarrotDebug.ui(`   Has sufficient sections: ${hasSections} (${sectionMatches?.length || 0} found, need 2+)`);
+    CarrotDebug.ui(`   Has sufficient tags: ${hasTags} (${tagCount} found, need 3+)`);
 
     if (!hasSections && !hasTags) {
-        console.log('❌ [detectFullsheetInMessage] Not enough structure (need 2+ sections OR 3+ tags)');
+        CarrotDebug.ui('❌ [detectFullsheetInMessage] Not enough structure (need 2+ sections OR 3+ tags)');
         return null;
     }
 
-    console.log('✅ [detectFullsheetInMessage] Fullsheet structure detected!');
+    CarrotDebug.ui('✅ [detectFullsheetInMessage] Fullsheet structure detected!');
 
     // Try to extract character name from the FIRST tag - LANGUAGE-AGNOSTIC
-    console.log('🔍 [detectFullsheetInMessage] Extracting character name as suggestion...');
+    CarrotDebug.ui('🔍 [detectFullsheetInMessage] Extracting character name as suggestion...');
 
     // Universal name extraction: Find the first tag in the document (usually the name tag)
     // Works for ANY language: <NAME:John>, <名前:太郎>, <NOMBRE:Juan>, <ИМЯ:Иван>, etc.
     // [^\s>]+ matches any non-whitespace characters (all Unicode scripts)
     const firstTagMatch = messageText.match(/<[^\s>]+:\s*([^>]+)>/);
-    console.log(`   First tag match:`, firstTagMatch);
+    CarrotDebug.ui(`   First tag match:`, firstTagMatch);
 
     const characterName = firstTagMatch ? firstTagMatch[1].trim().replace(/_/g, ' ') : 'Unknown';
-    console.log(`   Extracted name suggestion: "${characterName}" (user can override this)`);
+    CarrotDebug.ui(`   Extracted name suggestion: "${characterName}" (user can override this)`);
 
     const result = {
         characterName,
@@ -3631,7 +3615,7 @@ function detectFullsheetInMessage(messageText) {
         sectionCount: sectionMatches?.length || 0
     };
 
-    console.log('✅ [detectFullsheetInMessage] Fullsheet detected!', result);
+    CarrotDebug.ui('✅ [detectFullsheetInMessage] Fullsheet detected!', result);
     debugLog('Fullsheet detected in message', result);
 
     return result;
@@ -3772,7 +3756,7 @@ async function handleRAGButtonClick(messageId, fullsheetInfo) {
         }
 
     } catch (error) {
-        console.error('RAG vectorization error:', error);
+        CarrotDebug.error('RAG vectorization error:', error);
         const originalHTML = button.html();
         button.html('<i class="fa-solid fa-xmark"></i> Failed')
               .css('background', 'linear-gradient(135deg, #ef4444, #dc2626)');
@@ -3798,77 +3782,77 @@ async function handleRAGButtonClick(messageId, fullsheetInfo) {
  * @returns {Promise<boolean>} Success status
  */
 async function vectorizeFullsheetFromMessage(characterName, content) {
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🔬 VECTORIZATION STARTED');
-    console.log(`   Character: ${characterName}`);
-    console.log(`   Content length: ${content.length} chars`);
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    CarrotDebug.ui('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    CarrotDebug.ui('🔬 VECTORIZATION STARTED');
+    CarrotDebug.ui(`   Character: ${characterName}`);
+    CarrotDebug.ui(`   Content length: ${content.length} chars`);
+    CarrotDebug.ui('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     const settings = getRAGSettings();
     const collectionId = generateCollectionId(characterName);
 
-    console.log(`📋 Settings:`, {
+    CarrotDebug.ui(`📋 Settings:`, {
         enabled: settings.enabled,
         simpleChunking: settings.simpleChunking,
         chunkSize: settings.chunkSize,
         chunkOverlap: settings.chunkOverlap,
         contextLevel: getCurrentContextLevel()
     });
-    console.log(`🗂️  Collection ID: ${collectionId}`);
+    CarrotDebug.ui(`🗂️  Collection ID: ${collectionId}`);
 
     try {
         // Step 1: Chunk the fullsheet
-        console.log('\n📦 STEP 1: Chunking fullsheet...');
+        CarrotDebug.ui('\n📦 STEP 1: Chunking fullsheet...');
         const chunks = chunkFullsheet(content, characterName, settings.chunkSize, settings.chunkOverlap);
 
         if (!chunks || chunks.length === 0) {
-            console.error('❌ STEP 1 FAILED: Chunking resulted in 0 chunks');
+            CarrotDebug.error('❌ STEP 1 FAILED: Chunking resulted in 0 chunks');
             throw new Error('Fullsheet chunking resulted in 0 chunks');
         }
 
-        console.log(`✅ STEP 1 COMPLETE: Created ${chunks.length} chunks`);
-        console.log(`   First chunk preview:`, chunks[0].text.substring(0, 100) + '...');
-        console.log(`   Chunk hashes:`, chunks.map(c => c.hash));
+        CarrotDebug.ui(`✅ STEP 1 COMPLETE: Created ${chunks.length} chunks`);
+        CarrotDebug.ui(`   First chunk preview:`, chunks[0].text.substring(0, 100) + '...');
+        CarrotDebug.ui(`   Chunk hashes:`, chunks.map(c => c.hash));
 
         // Step 2: Get existing hashes
-        console.log('\n🔍 STEP 2: Checking for existing chunks in vector DB...');
+        CarrotDebug.ui('\n🔍 STEP 2: Checking for existing chunks in vector DB...');
         const savedHashes = await apiGetSavedHashes(collectionId);
         const savedHashSet = new Set(savedHashes.map(h => h.hash));
-        console.log(`✅ STEP 2 COMPLETE: Found ${savedHashes.length} existing hashes`);
+        CarrotDebug.ui(`✅ STEP 2 COMPLETE: Found ${savedHashes.length} existing hashes`);
         if (savedHashes.length > 0) {
-            console.log(`   Existing hashes:`, Array.from(savedHashSet));
+            CarrotDebug.ui(`   Existing hashes:`, Array.from(savedHashSet));
         }
 
         // Step 3: Filter new chunks
-        console.log('\n🔢 STEP 3: Filtering for new chunks...');
+        CarrotDebug.ui('\n🔢 STEP 3: Filtering for new chunks...');
         const newChunks = chunks.filter(chunk => !savedHashSet.has(chunk.hash));
-        console.log(`✅ STEP 3 COMPLETE:`);
-        console.log(`   Total chunks: ${chunks.length}`);
-        console.log(`   Already saved: ${chunks.length - newChunks.length}`);
-        console.log(`   New chunks to insert: ${newChunks.length}`);
+        CarrotDebug.ui(`✅ STEP 3 COMPLETE:`);
+        CarrotDebug.ui(`   Total chunks: ${chunks.length}`);
+        CarrotDebug.ui(`   Already saved: ${chunks.length - newChunks.length}`);
+        CarrotDebug.ui(`   New chunks to insert: ${newChunks.length}`);
 
         // Step 4: Insert new chunks
         if (newChunks.length > 0) {
-            console.log(`\n💾 STEP 4: Inserting ${newChunks.length} new chunks into vector DB...`);
-            console.log(`   New chunk hashes:`, newChunks.map(c => c.hash));
+            CarrotDebug.ui(`\n💾 STEP 4: Inserting ${newChunks.length} new chunks into vector DB...`);
+            CarrotDebug.ui(`   New chunk hashes:`, newChunks.map(c => c.hash));
 
             await apiInsertVectorItems(collectionId, newChunks);
 
-            console.log(`✅ STEP 4 COMPLETE: Vector insertion successful`);
+            CarrotDebug.ui(`✅ STEP 4 COMPLETE: Vector insertion successful`);
         } else {
-            console.log('\n⏭️  STEP 4 SKIPPED: No new chunks to insert');
+            CarrotDebug.ui('\n⏭️  STEP 4 SKIPPED: No new chunks to insert');
         }
 
         // Step 5: Update local library
-        console.log('\n📚 STEP 5: Updating local library...');
+        CarrotDebug.ui('\n📚 STEP 5: Updating local library...');
         const library = getContextualLibrary();
-        console.log(`   Current library keys:`, Object.keys(library));
+        CarrotDebug.ui(`   Current library keys:`, Object.keys(library));
 
         if (!library[collectionId]) {
-            console.log(`   Creating new collection entry: ${collectionId}`);
+            CarrotDebug.ui(`   Creating new collection entry: ${collectionId}`);
             library[collectionId] = {};
         } else {
-            console.log(`   Collection already exists, updating...`);
+            CarrotDebug.ui(`   Collection already exists, updating...`);
         }
 
         chunks.forEach(chunk => {
@@ -3878,8 +3862,8 @@ async function vectorizeFullsheetFromMessage(characterName, content) {
             };
         });
 
-        console.log(`   Updated library with ${chunks.length} chunks`);
-        console.log(`   Library now has ${Object.keys(library[collectionId]).length} total entries for this collection`);
+        CarrotDebug.ui(`   Updated library with ${chunks.length} chunks`);
+        CarrotDebug.ui(`   Library now has ${Object.keys(library[collectionId]).length} total entries for this collection`);
 
         // Initialize collection metadata if it doesn't exist
         ensureRagState();
@@ -3904,24 +3888,24 @@ async function vectorizeFullsheetFromMessage(characterName, content) {
         }
 
         saveSettingsDebounced();
-        console.log(`✅ STEP 5 COMPLETE: Local library updated and saved`);
+        CarrotDebug.ui(`✅ STEP 5 COMPLETE: Local library updated and saved`);
 
         // Step 6: Track current embedding provider
-        console.log('\n🏷️  STEP 6: Tracking embedding provider...');
+        CarrotDebug.ui('\n🏷️  STEP 6: Tracking embedding provider...');
         const vectorSettings = getVectorSettings();
         // ragState already declared above, just reuse it
         ragState.lastEmbeddingSource = vectorSettings.source;
         ragState.lastEmbeddingModel = vectorSettings.model || null;
         saveSettingsDebounced();
-        console.log(`✅ STEP 6 COMPLETE: Tracked embedding provider`);
-        console.log(`   Source: ${vectorSettings.source}`);
-        console.log(`   Model: ${vectorSettings.model || 'default'}`);
+        CarrotDebug.ui(`✅ STEP 6 COMPLETE: Tracked embedding provider`);
+        CarrotDebug.ui(`   Source: ${vectorSettings.source}`);
+        CarrotDebug.ui(`   Model: ${vectorSettings.model || 'default'}`);
 
-        console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.log(`✅ VECTORIZATION SUCCESSFUL: ${characterName}`);
-        console.log(`   Total chunks: ${chunks.length}`);
-        console.log(`   Collection ID: ${collectionId}`);
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+        CarrotDebug.ui('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        CarrotDebug.ui(`✅ VECTORIZATION SUCCESSFUL: ${characterName}`);
+        CarrotDebug.ui(`   Total chunks: ${chunks.length}`);
+        CarrotDebug.ui(`   Collection ID: ${collectionId}`);
+        CarrotDebug.ui('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
         // Show success toast only if new chunks were added
         if (newChunks.length > 0) {
@@ -3933,11 +3917,11 @@ async function vectorizeFullsheetFromMessage(characterName, content) {
         }
 
     } catch (error) {
-        console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.error('❌ VECTORIZATION FAILED:', characterName);
-        console.error('   Error message:', error.message);
-        console.error('   Error stack:', error.stack);
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+        CarrotDebug.ui('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        CarrotDebug.error('❌ VECTORIZATION FAILED:', characterName);
+        CarrotDebug.error('   Error message:', error.message);
+        CarrotDebug.error('   Error stack:', error.stack);
+        CarrotDebug.ui('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
         toastr.error(`Failed to chunk ${characterName}: ${error.message}`);
         return false;
@@ -4050,7 +4034,7 @@ async function autoVectorizeMessage(messageId) {
 }
 
 async function carrotKernelRagInterceptor(chatArray, contextSize, abort, type) {
-    console.log('🥕🥕🥕 [CarrotKernel RAG] Interceptor called!', {
+    CarrotDebug.ui('🥕🥕🥕 [CarrotKernel RAG] Interceptor called!', {
         chatArrayLength: chatArray?.length,
         contextSize,
         type,
@@ -4059,7 +4043,7 @@ async function carrotKernelRagInterceptor(chatArray, contextSize, abort, type) {
     });
 
     const settings = getRAGSettings();
-    console.log('⚙️ [CarrotKernel RAG] Settings loaded:', {
+    CarrotDebug.ui('⚙️ [CarrotKernel RAG] Settings loaded:', {
         enabled: settings.enabled,
         queryContext: settings.queryContext,
         injectionDepth: settings.injectionDepth,
@@ -4073,7 +4057,7 @@ async function carrotKernelRagInterceptor(chatArray, contextSize, abort, type) {
     setExtensionPrompt(RAG_PROMPT_TAG, '', extension_prompt_types.IN_PROMPT, settings.injectionDepth, false, promptRole);
 
     if (!settings.enabled) {
-        console.log('❌ [CarrotKernel RAG] RAG is DISABLED - skipping');
+        CarrotDebug.ui('❌ [CarrotKernel RAG] RAG is DISABLED - skipping');
         return false;
     }
 
@@ -4081,7 +4065,7 @@ async function carrotKernelRagInterceptor(chatArray, contextSize, abort, type) {
     // Normal generations have type=undefined
     // 'continue', 'regenerate', 'swipe', 'impersonate' are all valid generation types we should process
     if (type === 'quiet') {
-        console.log(`⏭️ [CarrotKernel RAG] Skipping quiet generation`);
+        CarrotDebug.ui(`⏭️ [CarrotKernel RAG] Skipping quiet generation`);
         return false;
     }
 
@@ -4089,13 +4073,13 @@ async function carrotKernelRagInterceptor(chatArray, contextSize, abort, type) {
     // is_send_press is true when user clicks Send or presses Enter
     // Deletions, UI updates, etc. have is_send_press=false
     if (!is_send_press) {
-        console.log(`⏭️ [CarrotKernel RAG] Skipping - not user-initiated (is_send_press=false)`);
+        CarrotDebug.ui(`⏭️ [CarrotKernel RAG] Skipping - not user-initiated (is_send_press=false)`);
         return false;
     }
 
-    console.log('┌─────────────────────────────────────────────────────');
-    console.log('│ 🥕 CARROTKERNEL RAG INTERCEPTOR ACTIVATED');
-    console.log('└─────────────────────────────────────────────────────');
+    CarrotDebug.ui('┌─────────────────────────────────────────────────────');
+    CarrotDebug.ui('│ 🥕 CARROTKERNEL RAG INTERCEPTOR ACTIVATED');
+    CarrotDebug.ui('└─────────────────────────────────────────────────────');
 
     try {
         const context = getContext();
@@ -4103,42 +4087,42 @@ async function carrotKernelRagInterceptor(chatArray, contextSize, abort, type) {
         const characterName = activeCharacter?.name || context?.character?.name || null;
 
         if (!characterName) {
-            console.log('⚠️  RAG: No active character found');
+            CarrotDebug.ui('⚠️  RAG: No active character found');
             debugLog('No active character found for RAG interceptor');
             setExtensionPrompt(RAG_PROMPT_TAG, '', extension_prompt_types.IN_PROMPT, settings.injectionDepth, false, promptRole);
             return false;
         }
 
-        console.log(`📝 RAG: Character = ${characterName}`);
+        CarrotDebug.ui(`📝 RAG: Character = ${characterName}`);
 
         const queryText = buildQueryContext(settings.queryContext).trim();
         if (!queryText.length) {
-            console.log('⚠️  RAG: No recent messages to query');
+            CarrotDebug.ui('⚠️  RAG: No recent messages to query');
             debugLog('Empty query context for RAG interceptor');
             setExtensionPrompt(RAG_PROMPT_TAG, '', extension_prompt_types.IN_PROMPT, settings.injectionDepth, false, promptRole);
             return false;
         }
 
-        console.log(`🔍 RAG: Query = "${queryText.substring(0, 100)}..."`);
+        CarrotDebug.ui(`🔍 RAG: Query = "${queryText.substring(0, 100)}..."`);
 
         const ragChunks = await queryRAG(characterName, queryText);
 
         if (ragChunks.length > 0) {
-            console.log(`✅ RAG: Found ${ragChunks.length} relevant chunk${ragChunks.length > 1 ? 's' : ''}`);
-            console.log('📦 RAG: Chunks being injected:');
+            CarrotDebug.ui(`✅ RAG: Found ${ragChunks.length} relevant chunk${ragChunks.length > 1 ? 's' : ''}`);
+            CarrotDebug.ui('📦 RAG: Chunks being injected:');
             ragChunks.forEach((chunk, i) => {
-                console.log(`   ${i + 1}. [${chunk.section}] ${chunk.text.substring(0, 60)}... (${chunk.text.length} chars)`);
+                CarrotDebug.ui(`   ${i + 1}. [${chunk.section}] ${chunk.text.substring(0, 60)}... (${chunk.text.length} chars)`);
             });
         } else {
-            console.log('⚠️  RAG: No relevant chunks found for this query');
+            CarrotDebug.ui('⚠️  RAG: No relevant chunks found for this query');
         }
 
         await injectRAGResults(characterName, ragChunks);
 
-        console.log('✅ RAG: Injection complete');
-        console.log('─────────────────────────────────────────────────────\n');
+        CarrotDebug.ui('✅ RAG: Injection complete');
+        CarrotDebug.ui('─────────────────────────────────────────────────────\n');
     } catch (error) {
-        console.error('❌ RAG: Interceptor failed', error);
+        CarrotDebug.error('❌ RAG: Interceptor failed', error);
         setExtensionPrompt(RAG_PROMPT_TAG, '', extension_prompt_types.IN_PROMPT, settings.injectionDepth, false, promptRole);
     }
 
@@ -4168,7 +4152,7 @@ async function purgeOrphanedVectors(collectionId, deletedHashes) {
         await apiDeleteVectorHashes(collectionId, deletedHashes);
         debugLog(`Successfully purged ${deletedHashes.length} vectors from ${collectionId}`);
     } catch (error) {
-        console.error(`Failed to purge orphaned vectors from ${collectionId}:`, error);
+        CarrotDebug.error(`Failed to purge orphaned vectors from ${collectionId}:`, error);
         throw error;
     }
 }
@@ -4189,7 +4173,7 @@ async function deleteEntireCollection(collectionId) {
         await apiDeleteCollection(collectionId);
         debugLog(`Successfully deleted collection ${collectionId}`);
     } catch (error) {
-        console.error(`Failed to delete collection ${collectionId}:`, error);
+        CarrotDebug.error(`Failed to delete collection ${collectionId}:`, error);
         throw error;
     }
 }
@@ -4269,7 +4253,7 @@ async function regenerateChunkKeywords(chunk, characterName, onSuccess, onError)
         // We want keywords based ONLY on current chunk text, not inherited tags from full character
         const tags = [];
 
-        console.log('🔧 [regenerateChunkKeywords] Regenerating keywords for chunk:', {
+        CarrotDebug.ui('🔧 [regenerateChunkKeywords] Regenerating keywords for chunk:', {
             hash,
             sectionTitle,
             textLength: chunkText.length,
@@ -4279,7 +4263,7 @@ async function regenerateChunkKeywords(chunk, characterName, onSuccess, onError)
         // Generate new metadata
         const newMetadata = buildChunkMetadata(sectionTitle, topic, chunkText, tags, characterName);
 
-        console.log('📦 [regenerateChunkKeywords] New metadata generated:', {
+        CarrotDebug.ui('📦 [regenerateChunkKeywords] New metadata generated:', {
             systemKeywords: newMetadata.systemKeywords?.slice(0, 10),
             totalKeywords: newMetadata.systemKeywords?.length
         });
@@ -4302,7 +4286,7 @@ async function regenerateChunkKeywords(chunk, characterName, onSuccess, onError)
         chunk.customRegex = [];
         chunk.disabledKeywords = [];
 
-        console.log('✅ [regenerateChunkKeywords] Keywords wiped and regenerated:', {
+        CarrotDebug.ui('✅ [regenerateChunkKeywords] Keywords wiped and regenerated:', {
             hash,
             newKeywords: chunk.keywords?.slice(0, 10),
             totalKeywords: chunk.keywords?.length
@@ -4315,7 +4299,7 @@ async function regenerateChunkKeywords(chunk, characterName, onSuccess, onError)
 
         toastr.success('Keywords regenerated!');
     } catch (error) {
-        console.error('[regenerateChunkKeywords] Failed to regenerate keywords:', error);
+        CarrotDebug.error('[regenerateChunkKeywords] Failed to regenerate keywords:', error);
         toastr.error('Failed to regenerate keywords: ' + error.message);
 
         // Call error callback

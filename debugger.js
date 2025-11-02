@@ -96,6 +96,9 @@ export class CarrotDebugger {
     repo(message, data = null) { this._log('REPO', message, data); }
 
     error(message, data = null) {
+        // IMPORTANT: Respect enabled/debugMode settings - only log errors if debug is on
+        if (!this.enabled) return;
+
         const cat = this.categories.ERROR;
         const prefix = `🥕 CARROT ${cat.emoji} BNY: ERROR`;
 
