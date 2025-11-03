@@ -4,7 +4,7 @@
 // =============================================================================
 
 import { characters, this_chid, chat_metadata, saveSettingsDebounced, saveCharacterDebounced } from '../../../../script.js';
-import { world_info, world_names, selected_world_info } from '../../../world-info.js';
+import { world_info, world_names, selected_world_info, openWorldInfoEditor } from '../../../world-info.js';
 import { saveMetadataDebounced, extension_settings } from '../../../extensions.js';
 import { getCharaFilename } from '../../../utils.js';
 import { characterRepoBooks, tagLibraries, EXTENSION_NAME } from './carrot-state.js';
@@ -409,6 +409,7 @@ function renderLorebookList(searchTerm = '') {
     listElement.find('.carrot-conn-star').on('click', handleStarClick);
     listElement.find('.carrot-conn-scope').on('change', handleScopeChange);
     listElement.find('.carrot-conn-badge').on('click', handleBadgeClick);
+    listElement.find('.carrot-conn-open-editor').on('click', handleOpenEditor);
 }
 
 function renderLorebookItem(lorebookName, isConnected) {
@@ -473,9 +474,27 @@ function renderLorebookItem(lorebookName, isConnected) {
                 </div>
             ` : '<div style="width: 28px;"></div>'}
 
-            <!-- Lorebook Name -->
-            <div style="flex: 1; font-weight: 500; color: var(--SmartThemeBodyColor);">
-                ${lorebookName}
+            <!-- Lorebook Name with Edit Button -->
+            <div style="flex: 1; display: flex; align-items: center; gap: 8px;">
+                <div style="flex: 1; font-weight: 500; color: var(--SmartThemeBodyColor);">
+                    ${lorebookName}
+                </div>
+                <button class="carrot-conn-open-editor" data-lorebook="${lorebookName}" style="
+                    padding: 4px 8px;
+                    background: rgba(59, 130, 246, 0.15);
+                    border: 1.5px solid rgba(59, 130, 246, 0.4);
+                    border-radius: 6px;
+                    color: #3b82f6;
+                    font-size: 11px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    white-space: nowrap;"
+                    onmouseenter="this.style.background='rgba(59, 130, 246, 0.25)'; this.style.borderColor='rgba(59, 130, 246, 0.6)'"
+                    onmouseleave="this.style.background='rgba(59, 130, 246, 0.15)'; this.style.borderColor='rgba(59, 130, 246, 0.4)'"
+                    title="Open in World Info Editor">
+                    <i class="fa-solid fa-pencil"></i> Edit
+                </button>
             </div>
 
             <!-- Clickable Badge -->
@@ -644,6 +663,17 @@ async function handleBadgeClick(e) {
     renderLorebookList($('#carrot-connection-search').val());
 }
 
+function handleOpenEditor(e) {
+    e.stopPropagation();
+    const lorebookName = $(e.currentTarget).data('lorebook');
+
+    // Close the CarrotKernel Lorebook Connector modal
+    CarrotLorebookConnector.close();
+
+    // Open SillyTavern's native World Info editor with the selected lorebook
+    openWorldInfoEditor(lorebookName);
+}
+
 async function applyConnections() {
     const character = characters[this_chid];
     if (!character) {
@@ -684,6 +714,9 @@ async function applyConnections() {
     if (!character.data) character.data = {};
     if (!character.data.extensions) character.data.extensions = {};
     character.data.extensions.world = primaryLorebook || '';
+
+    // Update the form field so it gets saved correctly
+    $('#character_world').val(primaryLorebook || '');
 
     // Save character to disk
     saveCharacterDebounced();

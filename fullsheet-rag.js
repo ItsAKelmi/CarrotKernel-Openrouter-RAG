@@ -3635,7 +3635,7 @@ function addRAGButtonToMessage(messageId) {
     // Find the message element
     const messageElement = $(`.mes[mesid="${messageId}"]`);
     if (messageElement.length === 0) {
-        debugLog(`Message ${messageId} not found in DOM`);
+        // Message not in DOM (scrolled away, etc.) - silently skip
         return;
     }
 

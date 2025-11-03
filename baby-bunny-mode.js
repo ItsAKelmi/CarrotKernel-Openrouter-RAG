@@ -218,7 +218,6 @@ function extractAllSheetData(messageText) {
     const seenBlocks = new Set();
     for (const regex of bunnymoRegexes) {
         const matches = [...messageText.matchAll(regex)];
-        CarrotDebug.ui(`🐰 REGEX DEBUG: ${regex.source} found ${matches.length} matches`);
         for (const match of matches) {
             const fullBlock = match[0].trim();
             // Normalize for comparison (lowercase, remove extra whitespace)
@@ -227,9 +226,6 @@ function extractAllSheetData(messageText) {
             if (!seenBlocks.has(normalizedBlock)) {
                 seenBlocks.add(normalizedBlock);
                 allBlocks.push(fullBlock);
-                CarrotDebug.ui(`🐰 BLOCK FOUND: ${fullBlock.substring(0, 100)}... (${fullBlock.length} chars)`);
-            } else {
-                CarrotDebug.ui(`🐰 DUPLICATE BLOCK SKIPPED: ${fullBlock.substring(0, 50)}...`);
             }
         }
     }
@@ -241,8 +237,6 @@ function extractAllSheetData(messageText) {
         // Find all opening tags and try to extract content until the next opening tag or end of message
         const openingTagPattern = /<BunnymoTags>/gi;
         const openingMatches = [...messageText.matchAll(openingTagPattern)];
-
-        CarrotDebug.ui(`🐰 FALLBACK: Found ${openingMatches.length} opening tags`);
 
         for (let i = 0; i < openingMatches.length; i++) {
             const startPos = openingMatches[i].index;
@@ -259,11 +253,9 @@ function extractAllSheetData(messageText) {
             } else if (nextOpeningTag !== -1) {
                 // No closing tag, but there's another opening tag - extract up to it
                 endPos = nextOpeningTag;
-                CarrotDebug.ui('🐰 FALLBACK: No closing tag found, extracting until next opening tag');
             } else {
                 // Last tag in message, no closing tag - extract to end
                 endPos = messageText.length;
-                CarrotDebug.ui('🐰 FALLBACK: No closing tag found, extracting to end of message');
             }
 
             // Extract the block
@@ -301,7 +293,7 @@ function extractAllSheetData(messageText) {
             if (!seenBlocks.has(normalizedBlock)) {
                 seenBlocks.add(normalizedBlock);
                 allBlocks.push(extractedBlock);
-                CarrotDebug.ui(`🐰 FALLBACK: Recovered block ${i + 1}: ${extractedBlock.substring(0, 100)}... (${extractedBlock.length} chars)`);
+                CarrotDebug.ui(`🐰 FALLBACK: Recovered block (${extractedBlock.length} chars)`);
             }
         }
     }
@@ -1064,7 +1056,7 @@ async function showBatchBabyBunnyPopup(charactersData) {
                 top: 0 !important;
                 left: 0 !important;
                 width: 100% !important;
-                height: 100% !important;
+                height: 100vh !important;
                 background: rgba(0,0,0,0.8) !important;
                 z-index: 999999 !important;
                 display: flex !important;
@@ -1784,7 +1776,7 @@ async function showBabyBunnyPopup(characterData, options = {}) {
                 top: 0 !important;
                 left: 0 !important;
                 width: 100% !important;
-                height: 100% !important;
+                height: 100vh !important;
                 background: rgba(0,0,0,0.8) !important;
                 z-index: 999999 !important;
                 display: flex !important;
@@ -3889,7 +3881,7 @@ function showTutorialBabyBunnyPopup(bunnyData) {
             top: 0 !important;
             left: 0 !important;
             width: 100% !important;
-            height: 100% !important;
+            height: 100vh !important;
             background: rgba(0,0,0,0.8) !important;
             z-index: 999999 !important;
             display: flex !important;

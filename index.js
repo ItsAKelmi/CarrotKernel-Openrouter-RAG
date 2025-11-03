@@ -782,29 +782,46 @@ function saveSettings() {
 function extractBunnyMoCharacters(entry, lorebookName) {
     const characters = [];
     const content = entry.content || '';
+    const entryKey = entry.key || entry.keys || entry.comment || 'unknown';
 
     // Look for <BunnymoTags> blocks (character sheets)
     const bunnyMoMatches = content.match(/<BunnymoTags>(.*?)<\/BunnymoTags>/gs);
 
-    if (bunnyMoMatches) {
-        bunnyMoMatches.forEach(match => {
-            const tagContent = match.replace(/<\/?BunnymoTags>/g, '');
-            const character = parseBunnyMoTagBlock(tagContent, lorebookName);
-
-            if (character) {
-                characters.push(character);
-            }
-        });
+    if (!bunnyMoMatches) {
+        // No BunnymoTags block - silently skip, this entry is for other purposes
+        return characters;
     }
+
+    bunnyMoMatches.forEach((match, index) => {
+        const tagContent = match.replace(/<\/?BunnymoTags>/g, '');
+        const result = parseBunnyMoTagBlock(tagContent, lorebookName, entryKey);
+
+        if (result.success) {
+            characters.push(result.character);
+        } else {
+            // Log parsing failure with specific reason
+            CarrotDebug.repo(`⏭️ Skipped entry "${entryKey}" in ${lorebookName}: ${result.reason}`);
+        }
+    });
 
     return characters;
 }
 
 // Parse individual BunnymoTags block (copied from BunnyMoTags and enhanced)
-function parseBunnyMoTagBlock(tagContent, lorebookName) {
+// Returns: { success: boolean, character?: object, reason?: string }
+function parseBunnyMoTagBlock(tagContent, lorebookName, entryKey = 'unknown') {
     // Extract ALL <TAG:VALUE> patterns using regex, regardless of nesting or prose
+    // This will extract GENRE and LING tags from within <Genre> and <Linguistics> blocks
     const tagPattern = /<([^:>]+):([^>]+)>/g;
     const matches = [...tagContent.matchAll(tagPattern)];
+
+    // Check if block has any tags at all
+    if (matches.length === 0) {
+        return {
+            success: false,
+            reason: 'BunnymoTags block contains no valid <TAG:VALUE> patterns'
+        };
+    }
 
     let characterName = null;
     const tagMap = new Map();
@@ -831,15 +848,30 @@ function parseBunnyMoTagBlock(tagContent, lorebookName) {
         }
     });
 
-    if (characterName && tagMap.size > 0) {
+    // Validation: Must have Name tag
+    if (!characterName) {
         return {
-            name: characterName,
-            tags: tagMap,
-            source: lorebookName
+            success: false,
+            reason: `BunnymoTags block missing required <Name:CHARACTER_NAME> tag (found ${matches.length} other tags)`
         };
     }
 
-    return null;
+    // Validation: Must have at least one tag besides Name
+    if (tagMap.size === 0) {
+        return {
+            success: false,
+            reason: `BunnymoTags block for "${characterName}" has no character tags (only Name tag found)`
+        };
+    }
+
+    return {
+        success: true,
+        character: {
+            name: characterName,
+            tags: tagMap,
+            source: lorebookName
+        }
+    };
 }
 
 // =============================================================================
@@ -1111,7 +1143,8 @@ export async function unwrapLorebookEntries(lorebookName) {
 // Loads ALL characters from connected Character Repos
 // Context is handled by Lorebook Connector (which lorebooks are connected to which characters)
 async function scanSelectedLorebooks(lorebookNames) {
-    // Clear scanned characters to prevent stale data
+    // ALWAYS clear scannedCharacters to prevent stale data
+    // This matches main branch behavior and ensures consistent results
     scannedCharacters.clear();
 
     const foundCharacters = [];
@@ -1156,17 +1189,14 @@ async function scanSelectedLorebooks(lorebookNames) {
 
                 const characters = extractBunnyMoCharacters(entry, lorebookName);
                 characters.forEach(char => {
-                    // VALIDATION: Filter out non-character entries (metadata, lorebook names, etc.)
-                    if (!isValidCharacterName(char.name)) {
-                        return;
-                    }
-
-                    // Load ALL characters from Character Repos - no context filtering
-                    if (!scannedCharacters.has(char.name)) {
-                        scannedCharacters.set(char.name, char);
+                    // Load ALL characters from Character Repos - no filtering
+                    // If it's in a Character Repo, it's a valid character
+                    const cacheKey = `${lorebookName}::${char.name}`;
+                    if (!scannedCharacters.has(cacheKey)) {
+                        scannedCharacters.set(cacheKey, char);
                         foundCharacters.push(char.name);
                         foundCharactersInThisBook = true;
-                        CarrotDebug.repo(`✅ Loaded character: ${char.name} from ${lorebookName}`);
+                        CarrotDebug.repo(`✅ Loaded character: ${char.name} from ${lorebookName}`, { cacheKey });
                     }
                 });
             });
@@ -1189,18 +1219,19 @@ async function scanSelectedLorebooks(lorebookNames) {
     }
 
     CarrotDebug.endTimer('lorebook-scan', 'SCAN');
-    CarrotDebug.scan('Scan completed successfully', {
-        charactersFound: foundCharacters.length,
-        characterReposScanned: characterReposScanned,
-        tagLibrariesScanned: tagLibrariesScanned,
-        totalCharacters: scannedCharacters.size
-    });
 
-    return {
+    const scanResults = {
+        success: true,
         characters: foundCharacters,
+        characterCount: foundCharacters.length,
         characterRepos: characterReposScanned,
-        tagLibraries: tagLibrariesScanned
+        tagLibraries: tagLibrariesScanned,
+        totalInMap: scannedCharacters.size
     };
+
+    CarrotDebug.scan('Scan completed successfully', scanResults);
+
+    return scanResults;
 }
 
 // ============================================================================
@@ -1239,22 +1270,19 @@ function isValidCharacterName(name) {
 }
 
 // Flexible character name matching to handle variations in character names
-function findCharacterByName(searchName, silent = false) {
+// Now supports composite keys (lorebook::charactername)
+function findCharacterByName(searchName, lorebookName = null, silent = false) {
     if (!searchName) return null;
 
-    // Validate that this is a real character name, not metadata
-    if (!isValidCharacterName(searchName)) {
-        if (!silent) {
-            CarrotDebug.ui(`⏭️  Skipping invalid character name: "${searchName}"`);
+    // If we have a lorebook name, try exact composite key match first
+    if (lorebookName) {
+        const compositeKey = `${lorebookName}::${searchName}`;
+        if (scannedCharacters.has(compositeKey)) {
+            const charData = scannedCharacters.get(compositeKey);
+            return { name: charData.name || searchName, data: charData };
         }
-        return null;
     }
 
-    // First try exact match
-    if (scannedCharacters.has(searchName)) {
-        return { name: searchName, data: scannedCharacters.get(searchName) };
-    }
-    
     // Generate possible name variations for flexible matching
     const possibleNames = [
         searchName,
@@ -1269,30 +1297,34 @@ function findCharacterByName(searchName, silent = false) {
         searchName.replace(/\s+/g, '-'), // Replace spaces with dashes
         searchName.replace(/[^a-zA-Z0-9\s]/g, ''), // Remove all non-alphanumeric except spaces
     ];
-    
+
     // Check each available character against all possible variations
-    for (const [storedName, charData] of scannedCharacters.entries()) {
+    // Now keys are composite (lorebook::name), so extract the character name
+    for (const [cacheKey, charData] of scannedCharacters.entries()) {
+        // Extract character name from composite key
+        const characterName = charData.name || cacheKey.split('::')[1] || cacheKey;
+
         // Check if any variation of search name matches any variation of stored name
         const storedVariations = [
-            storedName,
-            storedName.toLowerCase(),
-            storedName.toUpperCase(),
-            storedName.trim(),
-            storedName.replace(/'/g, "'"),
-            storedName.replace(/'/g, "'"),
-            storedName.replace(/[^\w\s]/g, ''),
-            storedName.replace(/\s+/g, ' '),
-            storedName.replace(/\s+/g, '_'),
-            storedName.replace(/\s+/g, '-'),
-            storedName.replace(/[^a-zA-Z0-9\s]/g, ''),
+            characterName,
+            characterName.toLowerCase(),
+            characterName.toUpperCase(),
+            characterName.trim(),
+            characterName.replace(/'/g, "'"),
+            characterName.replace(/'/g, "'"),
+            characterName.replace(/[^\w\s]/g, ''),
+            characterName.replace(/\s+/g, ' '),
+            characterName.replace(/\s+/g, '_'),
+            characterName.replace(/\s+/g, '-'),
+            characterName.replace(/[^a-zA-Z0-9\s]/g, ''),
         ];
-        
+
         // Check for any match between search variations and stored variations
         for (const searchVar of possibleNames) {
             for (const storedVar of storedVariations) {
                 if (searchVar === storedVar) {
-                    CarrotDebug.ui(`✅ Found character match: "${searchName}" -> "${storedName}"`);
-                    return { name: storedName, data: charData };
+                    CarrotDebug.ui(`✅ Found character match: "${searchName}" -> "${characterName}" (${cacheKey})`);
+                    return { name: characterName, data: charData };
                 }
             }
         }
@@ -1301,7 +1333,9 @@ function findCharacterByName(searchName, silent = false) {
     // No match found - log as debug info, not error (could be old/invalid data)
     if (!silent) {
         CarrotDebug.ui(`ℹ️  Character not found in current scan: "${searchName}"`, {
-            availableCharacters: Array.from(scannedCharacters.keys()),
+            availableCharacters: Array.from(scannedCharacters.entries()).map(([key, data]) =>
+                data.name || key.split('::')[1] || key
+            ),
             searchVariations: possibleNames
         });
     }
@@ -1411,8 +1445,7 @@ async function injectCharacterData(activeCharacters) {
             });
         }
     } else {
-        // Fallback to original format if no template
-        CarrotDebug.inject('No template found, using fallback format');
+        // Fallback to original format if no template (silently)
         injectionText = '[Character Consistency Data]\n\n';
         
         charactersToInject.forEach(charName => {
@@ -1512,82 +1545,76 @@ async function injectCharacterData(activeCharacters) {
 // Render character data as native SillyTavern-style reasoning block
 function renderAsThinkingBox(activeCharacters) {
     CarrotDebug.startTimer('render-thinking-box', 'UI');
-    
+
+    console.log('🔍 renderAsThinkingBox called with:', activeCharacters);
+    console.log('🔍 scannedCharacters Map keys:', Array.from(scannedCharacters.keys()));
+    console.log('🔍 scannedCharacters Map size:', scannedCharacters.size);
+
     const settings = extension_settings[extensionName];
     const openAttr = settings.autoExpand ? 'open' : '';
-    
-    CarrotDebug.ui('Rendering ST-native thinking box display', {
-        activeCharacters: activeCharacters,
-        autoExpand: settings.autoExpand,
-        maxCharactersDisplay: settings.maxCharactersDisplay
-    });
-    
+
     // Respect maxCharactersDisplay limit
     const maxChars = Math.min(activeCharacters.length, settings.maxCharactersDisplay);
     const charactersToShow = activeCharacters.slice(0, maxChars);
-    
-    CarrotDebug.ui('Characters filtered for display', {
-        totalCharacters: activeCharacters.length,
-        maxAllowed: maxChars,
-        willShow: charactersToShow.length,
-        truncated: maxChars < activeCharacters.length
-    });
-    
+
     // Create BunnyMoTags-style formatted content for the thinking block
     let content = '';
     let renderedCharacters = 0;
-    
-    // Debug what we have available
-    CarrotDebug.ui('🔍 DEBUG: Character data lookup', {
-        charactersToShow: charactersToShow,
-        availableInScanned: Array.from(scannedCharacters.keys()),
-        scannedCharactersSize: scannedCharacters.size,
-        exactMatches: charactersToShow.filter(name => scannedCharacters.has(name)),
-        scannedCharactersEntries: Array.from(scannedCharacters.entries()).map(([key, value]) => ({ 
-            key, 
-            hasValue: !!value,
-            tagCount: value?.tags?.size || 0,
-            source: value?.source
-        }))
-    });
 
-    charactersToShow.forEach(rawCharName => {
-        // Extract actual character name from Baby Bunny Mode format if needed
-        let charName = rawCharName;
-        const babyBunnyMatch = charName.match(/^(.+?)\s+Character Archive\s+-\s+Generated by Baby Bunny Mode/i);
-        if (babyBunnyMatch) {
-            charName = babyBunnyMatch[1].trim();
+    charactersToShow.forEach(requestedKey => {
+        console.log(`🔍 Looking up character by key: "${requestedKey}"`);
+
+        // Try multiple matching strategies for backwards compatibility:
+        // 1. Exact composite key match (lorebook::charactername)
+        // 2. Case-insensitive composite key match
+        // 3. Partial match on character name only (for old data without lorebook prefix)
+        let charData = scannedCharacters.get(requestedKey);
+        let matchedKey = requestedKey;
+
+        if (!charData) {
+            // Strategy 2: Case-insensitive composite key lookup
+            const lowerKey = requestedKey.toLowerCase();
+            for (const [key, data] of scannedCharacters.entries()) {
+                if (key.toLowerCase() === lowerKey) {
+                    charData = data;
+                    matchedKey = key;
+                    console.log(`🔍 Found via case-insensitive match: "${requestedKey}" → "${key}"`);
+                    break;
+                }
+            }
         }
 
-        // Validate character name before attempting lookup
-        if (!isValidCharacterName(charName)) {
-            CarrotDebug.ui(`⏭️  Skipping non-character entry: "${charName}"`);
-            return; // Skip this iteration
+        if (!charData) {
+            // Strategy 3: Match just the character name part (backwards compatibility)
+            // If requestedKey doesn't have "::", try finding any key that ends with "::requestedKey"
+            if (!requestedKey.includes('::')) {
+                const lowerName = requestedKey.toLowerCase();
+                for (const [key, data] of scannedCharacters.entries()) {
+                    // Extract character name from composite key
+                    const charName = key.split('::')[1] || key;
+                    if (charName.toLowerCase() === lowerName) {
+                        charData = data;
+                        matchedKey = key;
+                        console.log(`🔍 Found via character name match: "${requestedKey}" → "${key}"`);
+                        break;
+                    }
+                }
+            }
         }
 
-        const charResult = findCharacterByName(charName, true); // silent = true
+        if (charData) {
+            // Extract display name from matched key
+            const displayName = charData.name || matchedKey.split('::')[1] || matchedKey;
+            console.log(`🔍 Found character data for: "${displayName}" (matched via "${matchedKey}")`);
 
-        if (charResult && charResult.data) {
-            const charData = charResult.data;
-            const actualCharName = charResult.name;
+            const actualCharName = displayName;
             renderedCharacters++;
             
             // Add collapsible character section with simple HTML details/summary
             content += `<details open style="margin-bottom: 12px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 8px; padding: 8px; display: block;">`;
-            content += `<summary style="cursor: pointer !important; font-weight: bold !important; color: var(--SmartThemeBodyColor) !important; font-size: 1.1em !important; text-shadow: 0 0 8px currentColor !important; margin-bottom: 8px !important; list-style: none !important; display: list-item !important; list-style-type: none !important;">🏷️ ${actualCharName}${actualCharName !== charName ? ` (matched from "${charName}")` : ''}</summary>`;
+            content += `<summary style="cursor: pointer !important; font-weight: bold !important; color: var(--SmartThemeBodyColor) !important; font-size: 1.1em !important; text-shadow: 0 0 8px currentColor !important; margin-bottom: 8px !important; list-style: none !important; display: list-item !important; list-style-type: none !important;">🏷️ ${actualCharName}</summary>`;
             content += `<div class="character-tags-content" style="display: block;">`;
-            
-            // Debug the character data structure
-            CarrotDebug.ui(`🔍 DEBUG: Character data for ${actualCharName}`, {
-                originalSearch: charName,
-                hasCharData: !!charData,
-                tagsType: typeof charData.tags,
-                tagsSize: charData.tags?.size,
-                tagsIsMap: charData.tags instanceof Map,
-                tagEntries: charData.tags ? Array.from(charData.tags.entries()) : 'no tags',
-                source: charData.source
-            });
-            
+
             // Check if tags is a Map or needs conversion
             let tagsToProcess = charData.tags;
             if (!(tagsToProcess instanceof Map)) {
@@ -1599,24 +1626,49 @@ function renderAsThinkingBox(activeCharacters) {
             // Create BunnyMoTags-style grouped sections (EXACT copy of BunnyMoTags grouping)
             const groupedSections = createBunnyMoTagsStyleSections(tagsToProcess);
             content += groupedSections;
-            
+
             content += `</div></details>`;
-            
-            CarrotDebug.ui(`Rendered character data: ${actualCharName}`, {
-                originalSearch: charName,
-                categories: tagsToProcess.size,
-                totalTags: Array.from(tagsToProcess.values()).reduce((sum, vals) => sum + vals.length, 0),
-                source: charData.source
-            });
         } else {
-            // Silently skip - character not available in current scan or invalid name
-            CarrotDebug.ui(`ℹ️  Character not rendered: ${charName} (not in current scan)`);
+            // Character not found - log detailed error to debugger only
+            CarrotDebug.error(`❌ Missing character data for display: ${requestedKey}`, {
+                availableCharacters: Array.from(scannedCharacters.keys()),
+                lookedFor: requestedKey,
+                scannedSize: scannedCharacters.size,
+                allRequestedCharacters: charactersToShow,
+                hasCompositeKeyFormat: requestedKey.includes('::')
+            });
+            // Silently skip - don't show error to user
         }
     });
-    
+
+    console.log(`🔍 Rendered ${renderedCharacters} characters out of ${charactersToShow.length} requested`);
+    console.log(`🔍 Content length: ${content.length}`);
+
     if (!content) {
-        content = `<em style="color: var(--SmartThemeQuoteColor); opacity: 0.7;">No character data found. Characters may not be scanned yet.</em>`;
-        CarrotDebug.ui('⚠️ No character content - showing empty message');
+        console.error('❌ NO CONTENT GENERATED - returning error message');
+
+        // Generate specific error message based on what went wrong
+        let errorReason = '';
+        if (activeCharacters.length === 0) {
+            errorReason = 'No characters were requested for display.';
+        } else if (scannedCharacters.size === 0) {
+            errorReason = `Requested ${activeCharacters.length} character(s) but no characters are loaded in memory. Character repos may not be marked or scanned yet.`;
+        } else if (renderedCharacters === 0) {
+            errorReason = `Requested characters "${activeCharacters.join('", "')}" but none were found in loaded characters. Available: ${Array.from(scannedCharacters.keys()).join(', ')}`;
+        } else {
+            errorReason = 'Character data was found but failed to render.';
+        }
+
+        content = `<em style="color: var(--SmartThemeQuoteColor); opacity: 0.7;">⚠️ ${errorReason}</em>`;
+
+        CarrotDebug.error('⚠️ No character content - showing error message', {
+            reason: errorReason,
+            requestedCharacters: activeCharacters,
+            requestedCount: activeCharacters.length,
+            scannedCharactersKeys: Array.from(scannedCharacters.keys()),
+            scannedSize: scannedCharacters.size,
+            renderedCount: renderedCharacters
+        });
     }
     
     // Show truncation indicator if needed
@@ -1677,8 +1729,13 @@ function createBunnyMoTagsStyleSections(tagsMap) {
         'GENDER': { color: '#4ecdc4', emoji: '⚧️', section: 'Physical' },
         'BUILD': { color: '#45b7d1', emoji: '💪', section: 'Physical' },
         'SKIN': { color: '#f39c12', emoji: '🎨', section: 'Physical' },
+        'SKINCOLOR': { color: '#f39c12', emoji: '🎨', section: 'Physical' },
         'HAIR': { color: '#9b59b6', emoji: '💇', section: 'Physical' },
+        'HAIRCOLOR': { color: '#9b59b6', emoji: '💇', section: 'Physical' },
+        'EYECOLOR': { color: '#3498db', emoji: '👁️', section: 'Physical' },
+        'AGE': { color: '#95a5a6', emoji: '📅', section: 'Physical' },
         'STYLE': { color: '#e67e22', emoji: '👔', section: 'Physical' },
+        'FONT': { color: '#e91e63', emoji: '🖋️', section: 'Physical' },
         
         // Dere Types section (like BunnyMoTags)
         'DERE': { color: '#ff69b4', emoji: '💖', section: 'Dere Types' },
@@ -1783,7 +1840,20 @@ function createBunnyMoTagsStyleSections(tagsMap) {
             tagGroup.values.forEach((value, index) => {
                 sectionsHTML += `<div style="margin: 4px 0 4px 16px;">`;
                 sectionsHTML += `<span style="color: ${tagGroup.color}; font-weight: 600; font-size: 0.9em;">• ${tagGroup.category}: </span>`;
-                sectionsHTML += `<span style="color: var(--SmartThemeBodyColor); font-size: 0.85em;">${value}</span>`;
+
+                // Special handling for FONT tag - display with the actual color
+                if (tagGroup.category.toUpperCase() === 'FONT') {
+                    const colorMatch = value.match(/#[0-9A-Fa-f]{6}|#[0-9A-Fa-f]{3}|[a-zA-Z]+/);
+                    if (colorMatch) {
+                        const fontColor = colorMatch[0];
+                        sectionsHTML += `<span style="color: ${fontColor}; font-weight: 900; font-size: 1em; text-shadow: 0 0 8px ${fontColor}, 0 0 16px ${fontColor};">Color Sample</span>`;
+                    } else {
+                        sectionsHTML += `<span style="color: var(--SmartThemeBodyColor); font-size: 0.85em;">${value}</span>`;
+                    }
+                } else {
+                    sectionsHTML += `<span style="color: var(--SmartThemeBodyColor); font-size: 0.85em;">${value}</span>`;
+                }
+
                 sectionsHTML += `<br>`;
                 sectionsHTML += `</div>`;
             });
@@ -1829,116 +1899,109 @@ function createBunnyMoTagsStyleSections(tagsMap) {
  * - Implemented category prefix display format
  */
 
-// Restore thinking blocks from stored chat data (for page refresh/chat switching)
-function restoreThinkingBlocksFromChat() {
+// Restore thinking blocks from cache (for page refresh/chat switching)
+// Restore thinking blocks from message.extra (for page refresh)
+// Following ST's reasoning.js pattern - data is already in message.extra from chat JSON
+async function restoreThinkingBlocksFromMessageExtra() {
     const settings = extension_settings[extensionName];
-    
-    if (!settings.enabled || settings.displayMode !== 'thinking') return;
-    
-    CarrotDebug.ui('🔄 PERSISTENCE: Scanning chat for stored thinking block data');
-    
+
+    console.log('🔄 restoreThinkingBlocksFromMessageExtra START');
+    console.log('🔄 Settings:', { enabled: settings?.enabled, displayMode: settings?.displayMode });
+
+    if (!settings.enabled || settings.displayMode !== 'thinking') {
+        console.log('🔄 Restoration skipped - not in thinking mode');
+        return;
+    }
+
+    CarrotDebug.ui('🔄 Restoring thinking blocks from message.extra...');
+
     let restoredCount = 0;
-    
-    // Scan through all chat messages for stored CarrotKernel data
+    let skippedNoData = 0;
+    let skippedNoDom = 0;
+    let skippedExisting = 0;
+
+    console.log('🔄 Processing', chat.length, 'messages in chat');
+
+    // Scan through all AI messages and restore thinking blocks
     chat.forEach((message, index) => {
-        if (message.extra?.carrot_character_data) {
-            const storedData = message.extra.carrot_character_data;
+        // Skip user messages
+        if (message.is_user) {
+            return;
+        }
 
-            // CLEANUP: Filter out invalid character names from stored data
-            if (storedData.characters && Array.isArray(storedData.characters)) {
-                const originalCount = storedData.characters.length;
-                storedData.characters = storedData.characters.filter(name => {
-                    const isValid = isValidCharacterName(name);
-                    if (!isValid) {
-                        CarrotDebug.ui(`🧹 Cleaned invalid stored name: "${name}"`);
-                    }
-                    return isValid;
-                });
+        console.log(`🔄 Message ${index}: Checking for character data in message.extra...`);
 
-                // If we filtered anything out, update the stored data
-                if (storedData.characters.length !== originalCount) {
-                    message.extra.carrot_character_data = storedData;
-                    CarrotDebug.ui(`🧹 Cleaned ${originalCount - storedData.characters.length} invalid entries from message ${index}`);
-                }
+        // Check if this AI message has character data
+        const storedData = message?.extra?.carrot_character_data;
 
-                // If no valid characters remain, skip this message entirely
-                if (storedData.characters.length === 0) {
-                    CarrotDebug.ui(`⏭️  Skipping message ${index} - no valid characters after cleanup`);
-                    return;
-                }
-            }
+        // Support both formats: array (old) or object with .characters property (current)
+        let characterNames;
+        if (Array.isArray(storedData)) {
+            characterNames = storedData;
+        } else if (storedData?.characters && Array.isArray(storedData.characters)) {
+            characterNames = storedData.characters;
+        } else {
+            console.log(`🔄 Message ${index}: No character data - SKIPPING`);
+            skippedNoData++;
+            return;
+        }
 
-            const messageElement = document.querySelector(`[mesid="${index}"]`);
-            
-            // Check if this message already has BunnyMoTags content
-            const existingCarrotContent = Array.from(messageElement?.querySelectorAll('.mes_reasoning_header_title') || [])
-                .some(el => el.textContent.includes('🥕 BunnyMoTags')) ||
-                Array.from(messageElement?.querySelectorAll('details[style*="border"]') || []).length > 0;
-            
-            CarrotDebug.ui(`🔍 PERSISTENCE DEBUG: Message ${index}`, {
-                hasMessageElement: !!messageElement,
-                hasStoredData: !!storedData.characters,
-                storedCharactersLength: storedData.characters?.length,
-                hasExistingCarrotContent: !!existingCarrotContent,
-                messageHTML: messageElement?.innerHTML?.substring(0, 200)
-            });
-            
-            if (messageElement && !existingCarrotContent && storedData.characters && storedData.characters.length > 0) {
-                CarrotDebug.ui(`🔄 PERSISTENCE: Restoring thinking block for message ${index}`, {
-                    characters: storedData.characters,
-                    originalDisplayMode: storedData.displayMode
-                });
-                
-                // Temporarily set pending data and call displayCharacterData for this specific message
-                const originalPending = [...pendingThinkingBlockData];
-                addToPendingThinkingBlockData(storedData.characters);
-                
-                // Generate the thinking block content
-                const thinkingBlockHTML = renderAsThinkingBox(storedData.characters);
-                
-                // Insert it directly into the message
-                const mesText = messageElement.querySelector('.mes_text');
-                if (mesText && thinkingBlockHTML) {
-                    mesText.insertAdjacentHTML('beforebegin', thinkingBlockHTML);
-                    
-                    // Ensure collapsible functionality works by adding event listeners
-                    const characterDetails = messageElement.querySelectorAll('details[style*="border"]');
-                    characterDetails.forEach(details => {
-                        const summary = details.querySelector('summary');
-                        if (summary && !summary.hasAttribute('data-carrot-listener')) {
-                            summary.setAttribute('data-carrot-listener', 'true');
-                            summary.addEventListener('click', (e) => {
-                                e.preventDefault();
-                                const isOpen = details.hasAttribute('open');
-                                if (isOpen) {
-                                    details.removeAttribute('open');
-                                } else {
-                                    details.setAttribute('open', '');
-                                }
-                            });
-                        }
-                    });
-                    
-                    // Mark the message as having CarrotKernel thinking content
-                    messageElement.classList.add('carrot-thinking');
-                    messageElement.setAttribute('data-carrot-thinking-state', 'done');
-                    
-                    restoredCount++;
-                }
+        console.log(`🔄 Message ${index}: Found ${characterNames.length} characters:`, characterNames);
 
-                // Restore original pending data (clear and re-add)
-                clearPendingThinkingBlockData();
-                if (originalPending.length > 0) {
-                    originalPending.forEach(char => addToPendingThinkingBlockData(char));
-                }
-            }
+        const messageElement = document.querySelector(`[mesid="${index}"]`);
+
+        if (!messageElement) {
+            console.error(`🔄 Message ${index}: DOM element NOT FOUND - SKIPPING`);
+            skippedNoDom++;
+            return;
+        }
+
+        // Check if thinking block already exists
+        const existingThinkingBlock = messageElement.querySelector('.carrot-thinking-details');
+
+        if (existingThinkingBlock) {
+            console.log(`🔄 Message ${index}: Already has thinking block - SKIPPING`);
+            skippedExisting++;
+            return;
+        }
+
+        // Render thinking block
+        console.log(`🔄 Message ${index}: Calling renderAsThinkingBox with:`, characterNames);
+
+        const thinkingBlockHTML = renderAsThinkingBox(characterNames);
+
+        console.log(`🔄 Message ${index}: renderAsThinkingBox returned HTML length:`, thinkingBlockHTML?.length || 0);
+
+        // Insert thinking block into message
+        const mesText = messageElement.querySelector('.mes_text');
+
+        if (mesText && thinkingBlockHTML) {
+            console.log(`🔄 Message ${index}: Inserting thinking block into DOM...`);
+            mesText.insertAdjacentHTML('beforebegin', thinkingBlockHTML);
+
+            messageElement.classList.add('carrot-thinking');
+            messageElement.setAttribute('data-carrot-thinking-state', 'done');
+
+            restoredCount++;
+            console.log(`🔄 Message ${index}: ✅ SUCCESSFULLY RESTORED THINKING BLOCK`);
+        } else {
+            console.error(`🔄 Message ${index}: ❌ FAILED TO INSERT - mesText=${!!mesText}, thinkingBlockHTML=${!!thinkingBlockHTML}`);
         }
     });
-    
+
+    console.log('🔄 restoreThinkingBlocksFromMessageExtra COMPLETE');
+    console.log('🔄 SUMMARY:', {
+        totalMessages: chat.length,
+        restoredCount,
+        skippedNoData,
+        skippedNoDom,
+        skippedExisting
+    });
+
     if (restoredCount > 0) {
-        CarrotDebug.ui(`✅ PERSISTENCE: Restored ${restoredCount} thinking blocks from storage`);
+        CarrotDebug.ui(`✅ Restored ${restoredCount} thinking blocks from message.extra`);
     } else {
-        CarrotDebug.ui('💭 PERSISTENCE: No stored thinking blocks found to restore');
+        CarrotDebug.ui('💭 No thinking blocks found to restore');
     }
 }
 
@@ -2135,7 +2198,11 @@ window.CARROT_toggleMacroSection = function() {
 // Main display function - coordinates thinking box vs cards display
 function displayCharacterData(injectedCharacters) {
     const settings = extension_settings[extensionName];
-    
+
+    console.log('🎯 displayCharacterData called with:', injectedCharacters);
+    console.log('🎯 Display mode:', settings.displayMode);
+    console.log('🎯 scannedCharacters Map size at display time:', scannedCharacters.size);
+
     CarrotDebug.ui('🎯 DISPLAY CHARACTER DATA: Function called', {
         injectedCharacters,
         charactersLength: injectedCharacters?.length,
@@ -2151,51 +2218,15 @@ function displayCharacterData(injectedCharacters) {
     
     let renderedContent = '';
     if (settings.displayMode === 'thinking') {
-        CarrotDebug.ui('About to call renderAsThinkingBox with:', injectedCharacters);
-        CarrotDebug.ui('🧠 DISPLAY: Rendering thinking box');
         renderedContent = renderAsThinkingBox(injectedCharacters);
-        CarrotDebug.ui('renderAsThinkingBox returned:', {
-            contentLength: renderedContent?.length,
-            hasContent: !!renderedContent,
-            content: renderedContent
-        });
-        CarrotDebug.ui('🧠 DISPLAY: Thinking box rendered', {
-            contentLength: renderedContent?.length,
-            hasContent: !!renderedContent
-        });
     } else if (settings.displayMode === 'cards') {
-        CarrotDebug.ui('📊 DISPLAY: Rendering cards');
         renderedContent = renderAsCards(injectedCharacters);
-        CarrotDebug.ui('📊 DISPLAY: Cards rendered', {
-            contentLength: renderedContent?.length,
-            hasContent: !!renderedContent
-        });
     }
-    
+
     if (renderedContent) {
         // Add to the last message
         const lastMessage = document.querySelector('#chat .mes:last-child');
         const allMessages = document.querySelectorAll('#chat .mes');
-
-        CarrotDebug.ui('DOM injection details:', {
-            contentLength: renderedContent.length,
-            lastMessageExists: !!lastMessage,
-            totalMessages: allMessages.length,
-            lastMessageId: lastMessage?.getAttribute('mesid'),
-            content: renderedContent.substring(0, 200) + '...'
-        });
-
-        CarrotDebug.ui('🎯 DISPLAY: DOM selection results', {
-            lastMessage: !!lastMessage,
-            lastMessageId: lastMessage?.getAttribute('mesid'),
-            totalMessages: allMessages.length,
-            lastFewMessages: Array.from(allMessages).slice(-3).map(msg => ({
-                mesid: msg.getAttribute('mesid'),
-                isUser: msg.classList.contains('is_user'),
-                isSystem: msg.classList.contains('is_system'),
-                name: msg.querySelector('.ch_name')?.textContent
-            }))
-        });
         
         if (lastMessage) {
             // Remove any existing CarrotKernel content (both old broken and new implementations)
@@ -2257,26 +2288,20 @@ function displayCharacterData(injectedCharacters) {
                             chat[messageId].extra = {};
                         }
 
-                        // VALIDATION: Filter out invalid character names before storing
-                        const validCharacters = injectedCharacters.filter(name => {
-                            const isValid = isValidCharacterName(name);
-                            if (!isValid) {
-                                CarrotDebug.ui(`🚫 Prevented storing invalid name: "${name}"`);
-                            }
-                            return isValid;
-                        });
+                        // All injected characters are valid - no filtering needed
+                        // Characters came from Character Repos
 
-                        // Only store if we have valid characters
-                        if (validCharacters.length > 0) {
+                        // Store characters if we have any
+                        if (injectedCharacters.length > 0) {
                             // Store CarrotKernel character data in message.extra (like ST's native reasoning)
                             chat[messageId].extra.carrot_character_data = {
-                                characters: validCharacters,
+                                characters: injectedCharacters,
                                 displayMode: settings.displayMode,
                                 timestamp: Date.now(),
                                 version: '1.0'
                             };
                         } else {
-                            CarrotDebug.ui(`⏭️  No valid characters to store for message ${messageId}`);
+                            CarrotDebug.ui(`⏭️  No characters to store for message ${messageId}`);
                         }
                         
                         // Save the chat to persist the data
@@ -2459,14 +2484,13 @@ async function processTagLibraryInjections(tagEntries) {
             const tagName = entry.comment || entry.key?.[0] || 'Unknown';
             const lorebookName = entry.world;
 
-            CarrotDebug.inject(`📋 Processing tag entry: "${tagName}" from ${lorebookName}`);
-
             // Look for a template matching this tag entry
             // Template name should match the entry name or have a trigger keyword
             const matchingTemplate = findTemplateForEntry(entry);
 
             if (matchingTemplate) {
-                CarrotDebug.inject(`✅ Found template for "${tagName}": ${matchingTemplate.name}`);
+                // Only log when we actually find and process a template
+                CarrotDebug.inject(`💉 Injecting tag template: "${tagName}" using ${matchingTemplate.name}`);
 
                 // Process template with entry data
                 const templateData = {
@@ -2495,21 +2519,9 @@ async function processTagLibraryInjections(tagEntries) {
 
                 const injectionCommand = `/inject id=${injectionId} position=${position} ephemeral=true scan=true depth=${depth} role=${role} ${injectionText}`;
 
-                CarrotDebug.inject(`💉 Executing tag injection`, {
-                    tagName: tagName,
-                    templateName: matchingTemplate.name,
-                    depth: depth,
-                    role: role,
-                    position: position,
-                    injectionSize: injectionText.length
-                });
-
                 await executeSlashCommandsWithOptions(injectionCommand, { displayCommand: false, showOutput: false });
-
-                CarrotDebug.inject(`✅ Tag injection successful: ${tagName}`);
-            } else {
-                CarrotDebug.inject(`⏭️ No template found for "${tagName}"`);
             }
+            // Silently skip entries without templates (most tag library entries don't have templates)
         } catch (error) {
             CarrotDebug.error(`❌ Failed to process tag entry injection:`, {
                 entry: entry,
@@ -2642,18 +2654,28 @@ async function processActivatedLorebookEntries(entryList) {
             activatedCharacters.push(character.name);
             
             // CRITICAL: Add character to scannedCharacters Map for display system
+            const cacheKey = character.cacheKey || `${character.source}::${character.name}`;
             const characterForStorage = {
+                name: character.name,
                 tags: new Map(Object.entries(character.tags)), // Convert to Map for consistency
                 source: character.source,
                 uid: character.uid
             };
-            scannedCharacters.set(character.name, characterForStorage);
-            
+            scannedCharacters.set(cacheKey, characterForStorage);
+
+            console.log(`✅ STORED CHARACTER IN scannedCharacters:`, {
+                cacheKey: cacheKey,
+                name: character.name,
+                source: character.source,
+                mapSize: scannedCharacters.size
+            });
+
             CarrotDebug.scan(`📊 Character extracted and stored: ${character.name}`, {
+                cacheKey: cacheKey,
                 tagCount: Object.keys(character.tags).length,
                 source: character.source,
                 uid: character.uid,
-                storedInScannedCharacters: scannedCharacters.has(character.name)
+                storedInScannedCharacters: scannedCharacters.has(cacheKey)
             });
         } else {
             CarrotDebug.scan(`⚠️ No character data extracted from entry`, {
@@ -2669,32 +2691,45 @@ async function processActivatedLorebookEntries(entryList) {
     
     if (characterData.length > 0) {
         CarrotDebug.scan(`🎴 Creating thinking blocks for ${characterData.length} activated characters`);
-        
+
         // Store character names for persistent tag injection
         setLastInjectedCharacters(characterData.map(char => char.name));
-        
+
         // Inject to AI context
         await injectCharacterData(characterData.map(char => char.name));
-        
+
         // Create system message with external cards (like BunnyMoTags)
         const settings = extension_settings[extensionName];
-        CarrotDebug.ui(`🔍 DISPLAY MODE DEBUG: settings.displayMode = "${settings.displayMode}"`);
-        
+
         if (settings.displayMode === 'cards') {
             // Create system message and external cards immediately
-            CarrotDebug.ui('📊 CARDS MODE: Creating system message immediately');
             await sendCarrotSystemMessage({ characters: characterData });
         } else if (settings.displayMode === 'thinking') {
-            // Store character data for thinking blocks when AI message is rendered
-            const characterNames = characterData.map(char => char.name);
-            pendingThinkingBlockData = characterNames;
-            CarrotDebug.ui('Storing thinking block data:', characterNames);
-            CarrotDebug.ui('🧠 THINKING MODE: Stored character data for later display', {
-                characterNames,
-                pendingThinkingBlockDataLength: pendingThinkingBlockData.length
-            });
-        } else {
-            CarrotDebug.ui('⚠️ UNKNOWN DISPLAY MODE:', settings.displayMode);
+            // Store character data in message.extra for persistence (following ST's reasoning.js pattern)
+            // This will automatically persist to swipe_info and chat JSON
+            // Store composite keys (lorebook::charactername) for accurate lookup
+            const characterKeys = characterData.map(char => char.cacheKey || `${char.source}::${char.name}`);
+
+            // Find the most recent user message to store character data
+            // WORLD_INFO_ACTIVATED fires during generation, so we look for the last user message
+            const lastUserMessageIndex = chat.findLastIndex(msg => msg.is_user);
+
+            if (lastUserMessageIndex >= 0) {
+                const userMessage = chat[lastUserMessageIndex];
+                if (!userMessage.extra) {
+                    userMessage.extra = {};
+                }
+                userMessage.extra.carrot_character_data = characterKeys;
+
+                console.log('✅ Stored character data in message.extra:', {
+                    messageIndex: lastUserMessageIndex,
+                    characters: characterKeys
+                });
+            } else {
+                // Fallback: store in pending data if no user message found (shouldn't happen)
+                console.warn('⚠️ No user message found to store character data');
+                setPendingThinkingBlockData(characterKeys);
+            }
         }
     } else {
         CarrotDebug.scan('ℹ️ No character repository entries activated', {
@@ -2728,46 +2763,55 @@ function extractCharacterDataFromEntry(entry) {
         name: characterName,
         tags: {},
         source: entry.world,
-        uid: entry.uid
+        uid: entry.uid,
+        cacheKey: `${entry.world}::${characterName}` // Composite key for scannedCharacters
     };
 
     // Parse BunnyMoTags from the entry content (FIX: correct case-sensitive matching)
     CarrotDebug.scan('Entry content preview:', entry.content.substring(0, 200));
-    
+
     // Try both case variations to be safe
-    const bunnyTagsMatch = entry.content.match(/<BunnyMoTags>(.*?)<\/BunnyMoTags>/s) || 
+    const bunnyTagsMatch = entry.content.match(/<BunnyMoTags>(.*?)<\/BunnyMoTags>/s) ||
                           entry.content.match(/<BunnymoTags>(.*?)<\/BunnymoTags>/s);
-    
-    if (bunnyTagsMatch) {
-        const tagsContent = bunnyTagsMatch[1];
-        CarrotDebug.scan('Found BunnyMoTags content:', tagsContent.substring(0, 100));
 
-        const tagMatches = tagsContent.match(/<([^:>]+):([^>]+)>/g);
-
-        if (tagMatches) {
-            CarrotDebug.scan('Found tag matches:', tagMatches);
-
-            tagMatches.forEach(tagMatch => {
-                const match = tagMatch.match(/<([^:>]+):([^>]+)>/);
-                if (match) {
-                    const category = match[1].toUpperCase().trim(); // Keep original case for display
-                    const value = match[2].trim();
-
-                    if (!character.tags[category]) {
-                        character.tags[category] = [];
-                    }
-                    character.tags[category].push(value);
-
-                    CarrotDebug.scan(`Added tag - ${category}: ${value}`);
-                }
-            });
-        } else {
-            CarrotDebug.scan('BunnyMoTags block found but no individual tags matched');
-        }
-    } else {
-        CarrotDebug.scan('No BunnyMoTags block found in entry content');
+    if (!bunnyTagsMatch) {
+        // No BunnyMoTags block found - this is not a character entry, skip it
+        CarrotDebug.scan('No BunnyMoTags block found in entry content - skipping (not a character)');
+        return null;
     }
-    
+
+    const tagsContent = bunnyTagsMatch[1];
+    CarrotDebug.scan('Found BunnyMoTags content:', tagsContent.substring(0, 100));
+
+    const tagMatches = tagsContent.match(/<([^:>]+):([^>]+)>/g);
+
+    if (!tagMatches || tagMatches.length === 0) {
+        // BunnyMoTags block exists but no tags found - invalid character entry
+        CarrotDebug.scan('BunnyMoTags block found but no individual tags matched - skipping');
+        return null;
+    }
+
+    CarrotDebug.scan('Found tag matches:', tagMatches);
+
+    tagMatches.forEach(tagMatch => {
+        const match = tagMatch.match(/<([^:>]+):([^>]+)>/);
+        if (match) {
+            const category = match[1].toUpperCase().trim();
+            const value = match[2].trim();
+
+            // Update character name if this is the Name tag
+            if (category === 'NAME') {
+                character.name = value; // Keep original case
+                character.cacheKey = `${entry.world}::${value}`; // Update cache key with actual name
+            }
+
+            if (!character.tags[category]) {
+                character.tags[category] = [];
+            }
+            character.tags[category].push(value);
+        }
+    });
+
     CarrotDebug.scan(`✅ Extracted character: ${character.name} with ${Object.keys(character.tags).length} tag categories`);
     return character;
 }
@@ -3327,7 +3371,7 @@ function showCarrotPopup(title, content) {
         $container.html(content);
         $container.addClass('carrot-repo-browser-popup');
 
-        // Set mobile-responsive sizing
+        // Set mobile-responsive sizing matching ST's large_dialogue_popup
         const isMobile = window.innerWidth <= 768;
         if (isMobile) {
             $container.css({
@@ -3338,15 +3382,32 @@ function showCarrotPopup(title, content) {
                 'border-radius': '0',
                 'margin': '0'
             });
+            // Use dvh if supported for better mobile browser support
+            if (CSS.supports('height', '100dvh')) {
+                $container.css({
+                    'height': '100dvh',
+                    'max-height': '100dvh'
+                });
+            }
             CarrotDebug.ui('MOBILE: Container set to full viewport');
         } else {
+            // Match ST's large_dialogue_popup sizing: 90vh/dvh height, 90vw/dvw max-width
             $container.css({
-                'width': 'min(95vw, 1600px)',
-                'height': 'min(90vh, 1000px)',
-                'max-width': 'min(95vw, 1600px)',
-                'max-height': 'min(90vh, 1000px)'
+                'width': '90vw',
+                'height': '90vh',
+                'max-width': '90vw',
+                'max-height': '90vh'
             });
-            CarrotDebug.ui('DESKTOP: Container set to large size');
+            // Use dvh/dvw if supported for consistency with ST
+            if (CSS.supports('height', '90dvh')) {
+                $container.css({
+                    'height': '90dvh',
+                    'max-height': '90dvh',
+                    'width': '90dvw',
+                    'max-width': '90dvw'
+                });
+            }
+            CarrotDebug.ui('DESKTOP: Container set to large size (90vh/vw)');
         }
     } else {
         // For other popups, use the wrapped structure
@@ -3374,6 +3435,25 @@ function showCarrotPopup(title, content) {
                 'max-height': '100vh',
                 'border-radius': '0'
             });
+            // Use dvh if supported for better mobile browser support
+            if (CSS.supports('height', '100dvh')) {
+                $('#carrot-popup-container').css({
+                    'height': '100dvh',
+                    'max-height': '100dvh'
+                });
+            }
+        } else {
+            // For desktop, use reasonable sizing (not as large as repository browser)
+            $('#carrot-popup-container').css({
+                'max-width': '90vw',
+                'max-height': '90vh'
+            });
+            if (CSS.supports('height', '90dvh')) {
+                $('#carrot-popup-container').css({
+                    'max-height': '90dvh',
+                    'max-width': '90dvw'
+                });
+            }
         }
     }
 
@@ -4241,7 +4321,8 @@ async function installPackNative(downloadUrl, filename) {
         const worldInfoModule = await import('../../../world-info.js');
         CarrotDebug.repo('World-info module imported:', Object.keys(worldInfoModule));
 
-        const { importWorldInfo, updateWorldInfoList } = worldInfoModule;
+        const { importWorldInfo } = worldInfoModule;
+        const updateWorldInfoList = worldInfoModule.updateWorldInfoList; // May be undefined in older ST versions
         CarrotDebug.repo('Functions available:', {
             importWorldInfo: typeof importWorldInfo,
             updateWorldInfoList: typeof updateWorldInfoList
@@ -4264,13 +4345,17 @@ async function installPackNative(downloadUrl, filename) {
         }
 
         CarrotDebug.repo('Step E: Updating world info list...');
-        // Refresh ST's lorebook list
-        try {
-            const updateResult = await updateWorldInfoList();
-            CarrotDebug.repo('Update result:', updateResult);
-        } catch (updateError) {
-            CarrotDebug.error('updateWorldInfoList failed (non-critical):', updateError);
-            // Non-critical - continue even if this fails
+        // Refresh ST's lorebook list (only if function exists)
+        if (typeof updateWorldInfoList === 'function') {
+            try {
+                const updateResult = await updateWorldInfoList();
+                CarrotDebug.repo('Update result:', updateResult);
+            } catch (updateError) {
+                CarrotDebug.error('updateWorldInfoList failed (non-critical):', updateError);
+                // Non-critical - continue even if this fails
+            }
+        } else {
+            CarrotDebug.repo('updateWorldInfoList not available (older ST version) - skipping refresh');
         }
 
         // Track the installation in our settings
@@ -6170,6 +6255,17 @@ function generateDisplaySettingsTab(currentSettings) {
                             <span class="carrot-toggle-slider"></span>
                         </label>
                     </div>
+
+                    <div style="display: flex; justify-content: between; align-items: center;">
+                        <div>
+                            <div style="font-weight: 500; color: var(--SmartThemeBodyColor);">Show what's being sent</div>
+                            <div style="font-size: 12px; color: var(--SmartThemeFadedColor);">Display the injected text in your messages (for debugging)</div>
+                        </div>
+                        <label class="carrot-toggle">
+                            <input type="checkbox" id="context-show-injection-text">
+                            <span class="carrot-toggle-slider"></span>
+                        </label>
+                    </div>
                 </div>
             </div>
         </div>
@@ -6463,11 +6559,14 @@ window.CarrotKernel = {
     refreshRepository: () => refreshRepository(),
     detectExistingPacks: () => detectExistingPacks(),
     downloadFile: (path, filename) => downloadFile(path, filename),
+    previewFile: (path, filename) => previewFile(path, filename),
     showPackInstallDialog: (path, filename) => showPackInstallDialog(path, filename),
+    installPackDirectly: (path, filename) => installPackDirectly(path, filename),
+    executeInstall: (path, filename) => executeInstall(path, filename),
     checkPackInstalled: (filename) => checkPackInstalled(filename),
     closeInstallDialog: () => closeInstallDialog(),
     formatFileSize: (bytes) => formatFileSize(bytes),
-    
+
     // Tutorial positioning/overlay
     getTutorialOverlay: () => getTutorialOverlay(),
     createTutorialOverlayInModal: (modal) => createTutorialOverlayInModal(modal),
@@ -6530,15 +6629,12 @@ function teardownExtension() {
         window.CARROT_MESSAGE_LISTENER_REGISTERED = false;
     }
 
-    if (carrotEventHandlers.chatRestoreListener && window.CARROT_RESTORE_LISTENER_REGISTERED) {
-        eventSource.removeListener(event_types.CHAT_CHANGED, carrotEventHandlers.chatRestoreListener);
-        window.CARROT_RESTORE_LISTENER_REGISTERED = false;
-    }
-
     if (carrotEventHandlers.worldInfoActivated && window.CARROT_WORLDINFO_LISTENER_REGISTERED) {
         eventSource.removeListener(event_types.WORLD_INFO_ACTIVATED, carrotEventHandlers.worldInfoActivated);
         window.CARROT_WORLDINFO_LISTENER_REGISTERED = false;
     }
+
+    // NOTE: MESSAGE_DELETED and MESSAGE_SWIPED listeners removed - no longer needed
 
     // Clear scanned data
     scannedCharacters.clear();
@@ -6566,59 +6662,59 @@ function registerEventListeners() {
     if (!window.CARROT_CHAT_LISTENERS_REGISTERED) {
         // Store the handler so we can remove it later
         carrotEventHandlers.chatChanged = async () => {
+            const settings = extension_settings[extensionName];
+
             CarrotDebug.scan('CHAT_CHANGED: Loading lorebooks based on connections...');
 
-            // Get lorebook connections from CarrotLorebookConnector
-            const connections = CarrotLorebookConnector.getCharacterConnections(this_chid);
+            // PHASE 1: SCAN - Load character data from lorebooks
+            const autoRescan = settings?.autoRescanOnChatLoad ?? true;
 
-            if (!connections || connections.length === 0) {
-                CarrotDebug.scan('No lorebook connections found for this character/chat');
+            if (autoRescan) {
+                // ALWAYS scan all character repos to ensure we have all character data for restoration
+                // This is critical because stored character data might reference any character repo
+                const allCharRepos = Array.from(characterRepoBooks);
 
-                // Fallback: If auto-rescan is enabled and there are selected lorebooks, use old behavior
-                const autoRescan = extension_settings[extensionName]?.autoRescanOnChatLoad ?? true;
-                if (autoRescan && selectedLorebooks.size > 0) {
-                    const context = CarrotContext?.getCurrentContext();
-                    const characterName = context?.characterId && context.characters?.[context.characterId]
-                        ? context.characters[context.characterId].name
-                        : null;
-
-                    CarrotDebug.scan(`Fallback: Chat changed to "${characterName || 'unknown'}" - context-aware scanning...`);
-                    let lorebooksToScan = Array.from(selectedLorebooks);
-                    if (lorebooksToScan.length === 0 && characterRepoBooks.size > 0) {
-                        CarrotDebug.scan('No selected lorebooks, scanning marked character repos');
-                        lorebooksToScan = Array.from(characterRepoBooks);
-                    }
-                    const results = await scanSelectedLorebooks(lorebooksToScan);
-                    CarrotDebug.scan(`Context-aware scan complete - ${scannedCharacters.size} character(s) loaded for ${characterName}`, results);
+                if (allCharRepos.length > 0) {
+                    CarrotDebug.scan(`Scanning all ${allCharRepos.length} character repos for restoration support`);
+                    await scanSelectedLorebooks(allCharRepos);
+                    CarrotDebug.scan(`Scan complete - ${scannedCharacters.size} character(s) loaded from character repos`);
+                } else {
+                    CarrotDebug.scan('No character repos configured - nothing to scan');
                 }
-            } else {
-                // Load lorebooks based on connections
-                CarrotDebug.scan(`Found ${connections.length} lorebook connections:`, connections);
+            }
 
-                // Scan connected lorebooks
-                const lorebooksToScan = connections.map(conn => conn.name);
-                if (lorebooksToScan.length > 0) {
-                    const results = await scanSelectedLorebooks(lorebooksToScan);
-                    CarrotDebug.scan(`Connection-based scan complete - ${scannedCharacters.size} character(s) loaded`, results);
-                }
+            // PHASE 2: RESTORE - Restore thinking blocks from message.extra AFTER scan completes (only if in thinking mode)
+            if (settings?.enabled && settings.displayMode === 'thinking') {
+                // Small delay to ensure DOM is fully ready
+                setTimeout(async () => {
+                    await restoreThinkingBlocksFromMessageExtra();
+                }, 500);
             }
         };
 
         // Register the handler
         eventSource.on(event_types.CHAT_CHANGED, carrotEventHandlers.chatChanged);
         window.CARROT_CHAT_LISTENERS_REGISTERED = true;
-        CarrotDebug.init('✓ CHAT_CHANGED listener registered');
+        CarrotDebug.init('✓ CHAT_CHANGED listener registered (scan + restore coordinated)');
     }
 
     // 2. CHARACTER_MESSAGE_RENDERED listener - Display thinking blocks and add persistent tags
     if (!window.CARROT_MESSAGE_LISTENER_REGISTERED) {
         // Store the handler so we can remove it later
         carrotEventHandlers.messageRendered = async (messageId) => {
+            console.log('📨 CHARACTER_MESSAGE_RENDERED EVENT START - messageId:', messageId);
+            console.log('📨 pendingThinkingBlockData at start:', pendingThinkingBlockData);
+
             const settings = extension_settings[extensionName];
+
+            console.log('📨 Settings:', { enabled: settings?.enabled, displayMode: settings?.displayMode });
 
             // CHARACTER_MESSAGE_RENDERED fires for AI messages, but we only want to show cards
             // when we have pending data from a previous user message that triggered WORLD_INFO_ACTIVATED
-            const message = chat.find(msg => msg.index === messageId);
+            // messageId is the array index, not a message property
+            const message = chat[messageId];
+
+            console.log('📨 Message found:', !!message, 'is_user:', message?.is_user);
 
             CarrotDebug.ui('Message lookup details:', {
                 messageId,
@@ -6654,70 +6750,83 @@ function registerEventListeners() {
                 return;
             }
 
-            // PERSISTENCE: Check if this message has stored CarrotKernel data (for page refresh recovery)
-            if (message?.extra?.carrot_character_data && !pendingThinkingBlockData.length) {
-                const storedData = message.extra.carrot_character_data;
+            // Only process thinking mode here (cards mode handled by WORLD_INFO_ACTIVATED)
+            if (settings.displayMode !== 'thinking') {
+                return;
+            }
 
-                CarrotDebug.ui('🔄 PERSISTENCE: Restoring thinking block from stored data', {
-                    messageId: messageId,
-                    storedCharacters: storedData.characters,
-                    storedDisplayMode: storedData.displayMode,
-                    currentDisplayMode: settings.displayMode
-                });
+            // Find character data from the preceding user message or this AI message
+            let characterNames = [];
 
-                // Only restore if we're in thinking mode and this message doesn't already have the thinking block
-                if (settings.displayMode === 'thinking') {
-                    const existingThinkingBlock = document.querySelector(`[mesid="${messageId}"] .carrot-thinking-details`);
+            // First check if this AI message already has character data (swipe/refresh scenario)
+            const aiStoredData = message?.extra?.carrot_character_data;
+            if (aiStoredData) {
+                // Support both formats: array (old) or object with .characters property (current)
+                if (Array.isArray(aiStoredData)) {
+                    characterNames = aiStoredData;
+                } else if (aiStoredData.characters && Array.isArray(aiStoredData.characters)) {
+                    characterNames = aiStoredData.characters;
+                }
 
-                    if (!existingThinkingBlock && storedData.characters && storedData.characters.length > 0) {
-                        CarrotDebug.ui('🔄 PERSISTENCE: Restoring thinking block for message', {
-                            messageId: messageId,
-                            characters: storedData.characters
-                        });
+                if (characterNames.length > 0) {
+                    console.log('📨 Found character data in AI message.extra:', characterNames);
+                }
+            }
 
-                        // Restore the thinking block using the stored character data
-                        displayCharacterData(storedData.characters);
-                        return; // Exit early since we restored from persistence
+            // If not found in AI message, look in previous user message
+            if (characterNames.length === 0) {
+                // Look for character data in the previous user message
+                // AI responses always follow user messages
+                const userMessageIndex = chat.findLastIndex((msg, idx) => msg.is_user && idx < messageId);
+
+                if (userMessageIndex >= 0) {
+                    const userMessage = chat[userMessageIndex];
+                    const userStoredData = userMessage?.extra?.carrot_character_data;
+
+                    if (userStoredData) {
+                        // Support both formats
+                        if (Array.isArray(userStoredData)) {
+                            characterNames = userStoredData;
+                        } else if (userStoredData.characters && Array.isArray(userStoredData.characters)) {
+                            characterNames = userStoredData.characters;
+                        }
+
+                        if (characterNames.length > 0) {
+                            console.log('📨 Found character data in user message.extra:', characterNames);
+
+                            // Copy character data to AI message for easy access later (use object format)
+                            if (!message.extra) {
+                                message.extra = {};
+                            }
+                            message.extra.carrot_character_data = {
+                                characters: characterNames,
+                                displayMode: settings.displayMode,
+                                timestamp: Date.now(),
+                                version: '1.0'
+                            };
+                            console.log('📨 Copied character data to AI message.extra');
+                        }
                     }
                 }
             }
 
-            // CHARACTER_MESSAGE_RENDERED should ONLY handle thinking mode
-            // Cards mode is already handled by WORLD_INFO_ACTIVATED -> sendCarrotSystemMessage
-            CarrotDebug.ui('CHARACTER_MESSAGE_RENDERED fired, checking thinking mode:', {
-                displayMode: settings.displayMode,
-                pendingDataLength: pendingThinkingBlockData.length,
-                pendingData: pendingThinkingBlockData
-            });
-
-            if (settings.displayMode === 'thinking' && pendingThinkingBlockData.length > 0) {
-                CarrotDebug.ui('Attempting to display thinking blocks for:', pendingThinkingBlockData);
-                CarrotDebug.ui('🧠 THINKING BLOCKS: Attempting to display thinking blocks', {
-                    characterNames: pendingThinkingBlockData
-                });
-
+            // Display thinking block if we have character data
+            if (characterNames.length > 0) {
                 try {
-                    // For thinking mode, use displayCharacterData which will call renderAsThinkingBox
-                    displayCharacterData(pendingThinkingBlockData);
-                    CarrotDebug.ui('Successfully called displayCharacterData');
-                    CarrotDebug.ui('✅ THINKING BLOCKS: Successfully called displayCharacterData');
-                    pendingThinkingBlockData = []; // Clear after displaying
+                    const existingThinkingBlock = document.querySelector(`[mesid="${messageId}"] .carrot-thinking-details`);
+
+                    if (!existingThinkingBlock) {
+                        console.log('📨 Displaying thinking block for characters:', characterNames);
+                        displayCharacterData(characterNames);
+                    } else {
+                        console.log('📨 Thinking block already exists, skipping');
+                    }
                 } catch (error) {
+                    console.error('📨 ❌ Error displaying thinking block:', error);
                     CarrotDebug.error('Error displaying character data:', error);
-                    CarrotDebug.error('❌ THINKING BLOCKS: Error displaying character data', error);
                 }
             } else {
-                // Clear any stale pending data if we're not in thinking mode
-                if (settings.displayMode !== 'thinking' && pendingThinkingBlockData.length > 0) {
-                    CarrotDebug.ui('🧹 Clearing stale pending data - display mode changed to:', settings.displayMode);
-                    pendingThinkingBlockData = [];
-                }
-
-                CarrotDebug.ui('⏭️ THINKING BLOCKS: Skipped display', {
-                    reason: settings.displayMode !== 'thinking' ? 'Not in thinking mode (cards handled by WORLD_INFO_ACTIVATED)' : 'No pending data',
-                    displayMode: settings.displayMode,
-                    pendingDataLength: pendingThinkingBlockData.length
-                });
+                console.log('📨 No character data found to display');
             }
 
             // Add persistent tags
@@ -6753,45 +6862,19 @@ function registerEventListeners() {
         CarrotDebug.init('✓ CHARACTER_MESSAGE_RENDERED listener registered');
     }
 
-    // 3. CHAT_CHANGED restore listener - Restore thinking blocks after page refresh/chat switch
-    if (!window.CARROT_RESTORE_LISTENER_REGISTERED) {
-        // Store the handler so we can remove it later
-        carrotEventHandlers.chatRestoreListener = async () => {
-            const settings = extension_settings[extensionName];
-
-            if (!settings.enabled || settings.displayMode !== 'thinking') return;
-
-            CarrotDebug.ui('📝 CHAT_CHANGED: Checking for thinking blocks to restore');
-
-            // Wait for auto-scan to complete before restoring (if auto-scan is enabled)
-            const autoRescan = extension_settings[extensionName]?.autoRescanOnChatLoad ?? true;
-            if (autoRescan && characterRepoBooks.size > 0) {
-                // Wait longer to ensure scan completes first
-                setTimeout(() => {
-                    CarrotDebug.ui('📝 RESTORE: Auto-scan should be complete, restoring thinking blocks');
-                    restoreThinkingBlocksFromChat();
-                }, 1500);
-            } else {
-                // No scan happening, restore immediately
-                setTimeout(() => {
-                    restoreThinkingBlocksFromChat();
-                }, 500);
-            }
-        };
-
-        // Register the handler
-        eventSource.on(event_types.CHAT_CHANGED, carrotEventHandlers.chatRestoreListener);
-        window.CARROT_RESTORE_LISTENER_REGISTERED = true;
-        CarrotDebug.init('✓ CHAT_CHANGED restore listener registered');
-    }
-
-    // 4. WORLD_INFO_ACTIVATED listener - Process activated entries and populate scannedCharacters
+    // 3. WORLD_INFO_ACTIVATED listener - Process activated entries and populate scannedCharacters
     if (!window.CARROT_WORLDINFO_LISTENER_REGISTERED) {
         // Wrapper function that checks for sheet commands first, then processes normal entries
         carrotEventHandlers.worldInfoActivated = async function(entryList) {
+            console.log('🌍 WORLD_INFO_ACTIVATED EVENT START');
+            console.log('🌍 entryList:', entryList);
+
             const settings = extension_settings[extensionName];
 
+            console.log('🌍 Settings:', { enabled: settings?.enabled, displayMode: settings?.displayMode });
+
             if (!settings.enabled || !entryList || entryList.length === 0) {
+                console.log('🌍 Skipping - not enabled or no entries');
                 return;
             }
 
@@ -6862,7 +6945,10 @@ function registerEventListeners() {
             }
 
             // No sheet command found, proceed with normal processing
+            console.log('🌍 Processing normal lorebook entries...');
             await processActivatedLorebookEntries(entryList);
+            console.log('🌍 WORLD_INFO_ACTIVATED EVENT COMPLETE');
+            console.log('🌍 pendingThinkingBlockData after processing:', pendingThinkingBlockData);
         };
 
         // Register the handler
@@ -6870,6 +6956,12 @@ function registerEventListeners() {
         window.CARROT_WORLDINFO_LISTENER_REGISTERED = true;
         CarrotDebug.init('✓ WORLD_INFO_ACTIVATED listener registered (with sheet command detection)');
     }
+
+    // NOTE: MESSAGE_DELETED and MESSAGE_SWIPED handlers removed
+    // - MESSAGE_DELETED: Not needed - ST handles message.extra cleanup automatically
+    // - MESSAGE_SWIPED: Not needed - ST's syncSwipeToMes() loads message.extra from swipe_info automatically
+    //   When user swipes, ST loads swipe_info[swipeId].extra into message.extra
+    //   CHARACTER_MESSAGE_RENDERED then fires and renders the thinking block from message.extra
 
     CarrotDebug.init('All event listeners registered successfully');
 }
@@ -7497,9 +7589,9 @@ function bindSettingsEvents() {
                 await scanSelectedLorebooks(Array.from(selectedLorebooks));
                 CarrotDebug.scan(`Scan complete - ${scannedCharacters.size} characters loaded`);
 
-                // Restore thinking blocks for current chat
-                setTimeout(() => {
-                    restoreThinkingBlocksFromChat();
+                // Restore thinking blocks for current chat from cache
+                setTimeout(async () => {
+                    await restoreThinkingBlocksFromCache();
                 }, 500);
             }
         } else {
@@ -8764,29 +8856,34 @@ function bindSettingsEvents() {
     });
 
     
-    // Helper for the viewer to get ALL data for a specific level
+    // Helper for the viewer to get data for a specific level
+    // FIXED: Now only returns the CURRENT character/chat's library, not ALL characters/chats
     function getFullLibraryForLevel(level) {
-        CarrotDebug.ui(`Getting full library for level: ${level}`);
+        CarrotDebug.ui(`Getting library for level: ${level}`);
         const ragState = extension_settings[extensionName]?.rag;
         if (!ragState?.libraries) {
             CarrotDebug.ui('No libraries found in ragState.');
             return {};
         }
 
-        let combinedLibrary = {};
+        const context = getContext();
         switch(level) {
             case 'character':
-                const allCharLibs = ragState.libraries.character || {};
-                for (const charId in allCharLibs) {
-                    Object.assign(combinedLibrary, allCharLibs[charId]);
+                const charId = context.characterId;
+                if (!charId && charId !== 0) {
+                    CarrotDebug.ui('No active character for character-level library');
+                    return {};
                 }
-                return combinedLibrary;
+                const charLibs = ragState.libraries.character || {};
+                return charLibs[charId] || {};
             case 'chat':
-                const allChatLibs = ragState.libraries.chat || {};
-                 for (const chatId in allChatLibs) {
-                    Object.assign(combinedLibrary, allChatLibs[chatId]);
+                const chatId = context.chatId;
+                if (!chatId && chatId !== 0) {
+                    CarrotDebug.ui('No active chat for chat-level library');
+                    return {};
                 }
-                return combinedLibrary;
+                const chatLibs = ragState.libraries.chat || {};
+                return chatLibs[chatId] || {};
             case 'global':
             default:
                 return ragState.libraries.global || {};
@@ -8896,51 +8993,58 @@ function bindSettingsEvents() {
             $(`.collection-avg-token-count[data-collection="${collectionId}"] .token-value`).text(`${avgTokens} tokens`);
         });
 
-        $('.carrot-toggle-collection-btn').on('click', async function() {
-            const collectionId = $(this).data('collection');
-            const ragState = extension_settings[extensionName].rag;
+        // NOTE: Event handlers moved to delegated handlers outside this function
+        // to ensure they persist after HTML regeneration
+    });
 
-            if (!ragState.disabledCollections) {
-                ragState.disabledCollections = [];
-            }
+    // DELEGATED EVENT HANDLERS FOR RAG VIEWER
+    // These are attached to document so they work even after HTML is regenerated
 
-            const index = ragState.disabledCollections.indexOf(collectionId);
-            if (index > -1) {
-                // Enable collection
-                ragState.disabledCollections.splice(index, 1);
-                toastr.success(`Collection enabled`);
-            } else {
-                // Disable collection
-                ragState.disabledCollections.push(collectionId);
-                toastr.warning(`Collection disabled - embeddings won't be queried`);
-            }
+    $(document).on('click', '.carrot-toggle-collection-btn', async function() {
+        const collectionId = $(this).data('collection');
+        const ragState = extension_settings[extensionName].rag;
 
-            await saveSettingsDebounced();
+        if (!ragState.disabledCollections) {
+            ragState.disabledCollections = [];
+        }
+
+        const index = ragState.disabledCollections.indexOf(collectionId);
+        if (index > -1) {
+            // Enable collection
+            ragState.disabledCollections.splice(index, 1);
+            toastr.success(`Collection enabled`);
+        } else {
+            // Disable collection
+            ragState.disabledCollections.push(collectionId);
+            toastr.warning(`Collection disabled - embeddings won't be queried`);
+        }
+
+        await saveSettingsDebounced();
+        $('#carrot-rag-refresh-viewer').click();
+    });
+
+    $(document).on('click', '.carrot-view-chunks-btn', function() {
+        const collectionId = $(this).data('collection');
+        openChunkVisualizer(collectionId);
+    });
+
+    $(document).on('click', '.carrot-rename-collection-btn', async function() {
+        const collectionId = $(this).data('collection');
+        const currentName = getCharacterNameFromCollectionId(collectionId);
+
+        const newName = prompt('Enter a custom name for this collection:', currentName);
+
+        if (newName !== null && newName.trim() !== '') {
+            await setCollectionName(collectionId, newName.trim());
+            toastr.success(`Renamed collection to "${newName.trim()}"`);
             $('#carrot-rag-refresh-viewer').click();
-        });
+        }
+    });
 
-        $('.carrot-view-chunks-btn').on('click', function() {
+    $(document).on('click', '.carrot-copy-context-btn', async function() {
+        try {
             const collectionId = $(this).data('collection');
-            openChunkVisualizer(collectionId);
-        });
-
-        $('.carrot-rename-collection-btn').on('click', async function() {
-            const collectionId = $(this).data('collection');
-            const currentName = getCharacterNameFromCollectionId(collectionId);
-
-            const newName = prompt('Enter a custom name for this collection:', currentName);
-
-            if (newName !== null && newName.trim() !== '') {
-                await setCollectionName(collectionId, newName.trim());
-                toastr.success(`Renamed collection to "${newName.trim()}"`);
-                $('#carrot-rag-refresh-viewer').click();
-            }
-        });
-
-        $('.carrot-copy-context-btn').on('click', async function() {
-            try {
-                const collectionId = $(this).data('collection');
-                const currentViewerContext = viewerContext;
+            const currentViewerContext = $('#carrot_rag_viewer_context').val() || 'global';
 
                 CarrotDebug.ui('[Move Collection] Starting move operation', { collectionId, currentViewerContext });
 
@@ -9054,96 +9158,95 @@ function bindSettingsEvents() {
 
                 CarrotDebug.ui('[Move Collection] Move complete, refreshing viewer');
                 $('#carrot-rag-refresh-viewer').click();
-            } catch (error) {
-                CarrotDebug.error('[Move Collection] Error during move operation:', error);
-                toastr.error(`Failed to move collection: ${error.message}`);
-            }
-        });
+        } catch (error) {
+            CarrotDebug.error('[Move Collection] Error during move operation:', error);
+            toastr.error(`Failed to move collection: ${error.message}`);
+        }
+    });
 
-        $('.carrot-delete-collection-btn').on('click', async function() {
-            const collectionId = $(this).data('collection');
-            const characterName = getCharacterNameFromCollectionId(collectionId);
+    $(document).on('click', '.carrot-delete-collection-btn', async function() {
+        const collectionId = $(this).data('collection');
+        const characterName = getCharacterNameFromCollectionId(collectionId);
 
-            const stContext = getContext();
-            const confirmed = await stContext.callGenericPopup(
-                `Are you sure you want to delete all chunks for "${characterName}"? This cannot be undone.`,
-                'confirm',
-                '',
-                { okButton: 'Delete', cancelButton: 'Cancel' }
-            );
+        const stContext = getContext();
+        const confirmed = await stContext.callGenericPopup(
+            `Are you sure you want to delete all chunks for "${characterName}"? This cannot be undone.`,
+            'confirm',
+            '',
+            { okButton: 'Delete', cancelButton: 'Cancel' }
+        );
 
-            if (!confirmed) return;
+        if (!confirmed) return;
 
-            const currentViewerContext = viewerContext;
-            const ragState = extension_settings[extensionName]?.rag;
+        const currentViewerContext = $('#carrot_rag_viewer_context').val() || 'global';
+        const ragState = extension_settings[extensionName]?.rag;
 
-            if (!ragState?.libraries) {
-                toastr.error('No RAG libraries found');
-                return;
-            }
+        if (!ragState?.libraries) {
+            toastr.error('No RAG libraries found');
+            return;
+        }
 
-            // Delete from the actual source library, not a copy
-            let deleted = false;
-            switch(currentViewerContext) {
-                case 'character':
-                    const allCharLibs = ragState.libraries.character || {};
-                    for (const charId in allCharLibs) {
-                        if (allCharLibs[charId][collectionId]) {
-                            delete allCharLibs[charId][collectionId];
-                            deleted = true;
-                            break;
-                        }
-                    }
-                    break;
-                case 'chat':
-                    const allChatLibs = ragState.libraries.chat || {};
-                    for (const chatId in allChatLibs) {
-                        if (allChatLibs[chatId][collectionId]) {
-                            delete allChatLibs[chatId][collectionId];
-                            deleted = true;
-                            break;
-                        }
-                    }
-                    break;
-                case 'global':
-                default:
-                    if (ragState.libraries.global[collectionId]) {
-                        delete ragState.libraries.global[collectionId];
+        // Delete from the actual source library, not a copy
+        let deleted = false;
+        switch(currentViewerContext) {
+            case 'character':
+                const allCharLibs = ragState.libraries.character || {};
+                for (const charId in allCharLibs) {
+                    if (allCharLibs[charId][collectionId]) {
+                        delete allCharLibs[charId][collectionId];
                         deleted = true;
+                        break;
                     }
-                    break;
-            }
-
-            if (!deleted) {
-                toastr.error('Collection not found in storage');
-                return;
-            }
-
-            // Use immediate save and refresh after save completes
-            if (typeof saveSettings === 'function') {
-                await saveSettings();
-            } else {
-                saveSettingsDebounced();
-            }
-
-            // Delete vector embeddings from the database
-            try {
-                if (fullsheetRAGLoaded && fullsheetAPI.deleteEntireCollection) {
-                    CarrotDebug.ui(`🥕 Deleting vector collection: ${collectionId}`);
-                    await fullsheetAPI.deleteEntireCollection(collectionId);
                 }
-            } catch (error) {
-                CarrotDebug.error('🥕 Failed to delete vector collection:', error);
-                // Don't block on vector deletion failure
+                break;
+            case 'chat':
+                const allChatLibs = ragState.libraries.chat || {};
+                for (const chatId in allChatLibs) {
+                    if (allChatLibs[chatId][collectionId]) {
+                        delete allChatLibs[chatId][collectionId];
+                        deleted = true;
+                        break;
+                    }
+                }
+                break;
+            case 'global':
+            default:
+                if (ragState.libraries.global[collectionId]) {
+                    delete ragState.libraries.global[collectionId];
+                    deleted = true;
+                }
+                break;
+        }
+
+        if (!deleted) {
+            toastr.error('Collection not found in storage');
+            return;
+        }
+
+        // Use immediate save and refresh after save completes
+        if (typeof saveSettings === 'function') {
+            await saveSettings();
+        } else {
+            saveSettingsDebounced();
+        }
+
+        // Delete vector embeddings from the database
+        try {
+            if (fullsheetRAGLoaded && fullsheetAPI.deleteEntireCollection) {
+                CarrotDebug.ui(`🥕 Deleting vector collection: ${collectionId}`);
+                await fullsheetAPI.deleteEntireCollection(collectionId);
             }
+        } catch (error) {
+            CarrotDebug.error('🥕 Failed to delete vector collection:', error);
+            // Don't block on vector deletion failure
+        }
 
-            toastr.success(`Deleted ${characterName} from ${currentViewerContext.toUpperCase()} storage`);
+        toastr.success(`Deleted ${characterName} from ${currentViewerContext.toUpperCase()} storage`);
 
-            // Small delay to ensure save completes before refresh
-            setTimeout(() => {
-                $('#carrot-rag-refresh-viewer').click();
-            }, 100);
-        });
+        // Small delay to ensure save completes before refresh
+        setTimeout(() => {
+            $('#carrot-rag-refresh-viewer').click();
+        }, 100);
     });
 
 

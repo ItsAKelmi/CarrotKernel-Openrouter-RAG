@@ -959,11 +959,11 @@ function createTabbedCharacterCard(character, index, tabType) {
     nameText.textContent = name;
     nameDiv.appendChild(nameText);
     card.appendChild(nameDiv);
-    
+
     // Create tab-specific content
     const tabContent = createTabSpecificContent(tags, tabType);
     card.appendChild(tabContent);
-    
+
     return card;
 }
 
@@ -1022,7 +1022,7 @@ function createTabSpecificContent(tags, tabType) {
                 description: 'Physical Build and Stature'
             },
             'Appearance': {
-                pattern: /^(SKIN|HAIR|STYLE):/,
+                pattern: /^(SKIN|SKINCOLOR|HAIR|HAIRCOLOR|EYECOLOR|STYLE|FONT|AGE):/,
                 icon: '✨',
                 description: 'Visual Characteristics'
             },
@@ -1169,7 +1169,7 @@ function createTabSpecificContent(tags, tabType) {
             else if (tagCategory.toLowerCase() === 'build') {
                 category = 'Build & Form';
             }
-            else if (['skin', 'hair', 'style'].includes(tagCategory.toLowerCase())) {
+            else if (['skin', 'skincolor', 'hair', 'haircolor', 'eyecolor', 'age', 'style', 'font'].includes(tagCategory.toLowerCase())) {
                 category = 'Appearance';
             }
             else if (tagCategory.toLowerCase() === 'gender') {
@@ -1184,7 +1184,7 @@ function createTabSpecificContent(tags, tabType) {
             else if (tagCategory.toLowerCase() === 'gender') {
                 category = 'Gender & Identity';
             }
-            else if (tagCategory === 'skin' || tagCategory === 'hair' || tag.startsWith('SKIN:') || tag.startsWith('HAIR:') || tag.startsWith('STYLE:')) {
+            else if (tagCategory === 'skin' || tagCategory === 'skincolor' || tagCategory === 'hair' || tagCategory === 'haircolor' || tagCategory === 'eyecolor' || tagCategory === 'age' || tagCategory === 'font' || tag.startsWith('SKIN:') || tag.startsWith('SKINCOLOR:') || tag.startsWith('HAIR:') || tag.startsWith('HAIRCOLOR:') || tag.startsWith('EYECOLOR:') || tag.startsWith('AGE:') || tag.startsWith('STYLE:') || tag.startsWith('FONT:')) {
                 category = 'Appearance';
             }
             else if (tagCategory === 'dressstyle' || tag.startsWith('DRESSSTYLE:')) {
@@ -1769,22 +1769,36 @@ function createTagSection(categoryName, tags, tabType, isCollapsible = false, ca
         }
         
         tagElement.style.cssText = tagStyles;
-        
+
         // Keep full tag display with category prefixes (e.g., "SKIN: FAIR")
         let displayText = tag;
-        
+
+        // Special handling for FONT tag - extract and apply color
+        if (tag.toUpperCase().startsWith('FONT:')) {
+            const colorMatch = tag.match(/FONT:\s*(#[0-9A-Fa-f]{6}|#[0-9A-Fa-f]{3}|[a-zA-Z]+)/i);
+            if (colorMatch && colorMatch[1]) {
+                const fontColor = colorMatch[1];
+                // Apply the font color to the tag text
+                tagElement.style.color = fontColor;
+                tagElement.style.fontWeight = '900';
+                tagElement.style.textShadow = `0 0 8px ${fontColor}, 0 0 16px ${fontColor}`;
+                displayText = `FONT: Color Sample`;
+                tagElement.style.fontSize = '1em';
+            }
+        }
+
         // Format the display text nicely - preserve natural spacing
         displayText = displayText.replace(/_/g, ' ').trim();
-        
+
         // Only add spaces before capitals if there's no existing space and it's not at the start
         displayText = displayText.replace(/([a-z])([A-Z])/g, '$1 $2');
-        
+
         // Clean up multiple spaces and capitalize first letter only
         displayText = displayText.replace(/\s+/g, ' ').trim();
         if (displayText.length > 0) {
             displayText = displayText.charAt(0).toUpperCase() + displayText.slice(1);
         }
-        
+
         tagElement.textContent = displayText;
         tagElement.setAttribute('data-original-tag', tag); // Keep original for WB search
         

@@ -14,7 +14,7 @@ export const characterRepoBooks = new Set();     // Lorebooks marked as characte
 export const tagLibraries = new Set();           // Lorebooks marked as tag libraries (pack definitions)
 
 // Character data
-export const scannedCharacters = new Map();      // character_name -> { tags: Map, source: lorebook_name }
+export const scannedCharacters = new Map();      // "lorebook::character_name" -> { name, tags: Map, source: lorebook_name, uid }
 
 // Injection state
 export let lastInjectedCharacters = [];          // Track which characters were injected for persistence

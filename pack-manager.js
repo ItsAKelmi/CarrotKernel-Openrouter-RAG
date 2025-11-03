@@ -161,7 +161,10 @@ export class CarrotPackManager {
         if (reset) this.rateLimitInfo.resetTime = parseInt(reset) * 1000;
         this.rateLimitInfo.lastUpdated = Date.now();
 
-        CarrotDebug.repo(`📊 Rate limit: ${this.rateLimitInfo.remaining}/${this.rateLimitInfo.limit} remaining`);
+        // Only log if rate limit is getting low (< 10 remaining)
+        if (this.rateLimitInfo.remaining < 10) {
+            CarrotDebug.repo(`⚠️ Rate limit low: ${this.rateLimitInfo.remaining}/${this.rateLimitInfo.limit} remaining`);
+        }
     }
 
     // Check if error status is retryable
@@ -540,13 +543,11 @@ export class CarrotPackManager {
 
             this.availablePacks.clear();
 
-            CarrotDebug.repo('Starting to fetch pack info for each pack...');
+            // Fetch pack info (logging only errors to reduce console spam)
             for (const pack of packs) {
-                CarrotDebug.repo(`Fetching info for pack: ${pack.name}`);
                 const packInfo = await this.getPackInfo(pack.name);
                 if (packInfo) {
                     this.availablePacks.set(pack.name, packInfo);
-                    CarrotDebug.repo(`✅ Successfully added pack: ${pack.name}`);
                 } else {
                     CarrotDebug.repo(`⚠️ Failed to get info for pack: ${pack.name}`);
                 }
@@ -575,21 +576,9 @@ export class CarrotPackManager {
 
     // Get detailed info about a specific pack
     async getPackInfo(packName) {
-        CarrotDebug.repo(`getPackInfo called for pack: ${packName}`);
-
         try {
             const apiUrl = `https://api.github.com/repos/${this.githubRepo}/contents/${encodeURIComponent(this.packsFolder)}/${encodeURIComponent(packName)}`;
-
-            CarrotDebug.repo(`Pack info API URL: ${apiUrl}`);
-
             const response = await this.fetchWithRateLimit(apiUrl);
-
-            CarrotDebug.repo(`Pack info response for ${packName}:`, {
-                status: response.status,
-                statusText: response.statusText,
-                ok: response.ok,
-                rateLimitRemaining: response.headers.get('x-ratelimit-remaining')
-            });
 
             if (!response.ok) {
                 if (response.status === 403) {
@@ -609,11 +598,38 @@ export class CarrotPackManager {
                 return null;
             }
             
-            // Find the main pack JSON file
-            const jsonFile = contents.find(file => file.name.endsWith('.json'));
+            // Find the main pack JSON file (check root level first)
+            let jsonFile = contents.find(file => file.name.endsWith('.json'));
             const readmeFile = contents.find(file => file.name.toLowerCase().includes('readme'));
-            
-            if (!jsonFile) return null;
+
+            // If no JSON at root level, search in subfolders
+            if (!jsonFile) {
+                const subfolders = contents.filter(item => item.type === 'dir');
+
+                for (const folder of subfolders) {
+                    try {
+                        const subResponse = await this.fetchWithRateLimit(folder.url);
+                        if (subResponse.ok) {
+                            const subContents = await subResponse.json();
+                            if (Array.isArray(subContents)) {
+                                jsonFile = subContents.find(file => file.name.endsWith('.json'));
+                                if (jsonFile) {
+                                    CarrotDebug.repo(`📁 Found JSON in subfolder: ${folder.name}/${jsonFile.name}`);
+                                    break; // Found a JSON file, stop searching
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        // Continue searching other folders if one fails
+                        CarrotDebug.repo(`⚠️ Failed to search subfolder ${folder.name}:`, error.message);
+                    }
+                }
+            }
+
+            if (!jsonFile) {
+                CarrotDebug.repo(`⚠️ No JSON file found in pack or subfolders: ${packName}`);
+                return null;
+            }
             
             const packInfo = {
                 name: packName,
