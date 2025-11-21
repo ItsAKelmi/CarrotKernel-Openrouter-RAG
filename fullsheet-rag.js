@@ -3965,7 +3965,7 @@ function initializeRAG() {
     debugLog('Initializing CarrotKernel RAG system');
 
     // Register RAG interceptor for generation events
-    eventSource.on(event_types.GENERATION_STARTED, carrotKernelRagInterceptor);
+    eventSource.on(event_types.GENERATION_STARTED, carrotKernelRagInterceptor_CK);
     debugLog('✅ RAG interceptor registered for GENERATION_STARTED');
 
     // Hook into message events for button detection
@@ -4033,7 +4033,7 @@ async function autoVectorizeMessage(messageId) {
     }
 }
 
-async function carrotKernelRagInterceptor(chatArray, contextSize, abort, type) {
+async function carrotKernelRagInterceptor_CK(chatArray, contextSize, abort, type) {
     CarrotDebug.ui('🥕🥕🥕 [CarrotKernel RAG] Interceptor called!', {
         chatArrayLength: chatArray?.length,
         contextSize,
@@ -4129,7 +4129,7 @@ async function carrotKernelRagInterceptor(chatArray, contextSize, abort, type) {
     return false;
 }
 
-window.carrotKernelRagInterceptor = carrotKernelRagInterceptor;
+window.carrotKernelRagInterceptor_CK = carrotKernelRagInterceptor_CK;
 
 /**
  * Purge orphaned vectors from a collection

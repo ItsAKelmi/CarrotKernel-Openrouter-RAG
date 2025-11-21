@@ -3293,14 +3293,16 @@ function initializeBunnyMoTagsContextFiltering() {
     // Try to hook into the Generate function - it might not be available immediately
     const originalGenerate = window.Generate || globalThis.Generate;
     if (typeof originalGenerate === 'function') {
-        window.Generate = function(...args) {
+        window.Generate = async function(...args) {
             // Filter BunnyMoTags from context before generation
             const settings = extension_settings[extensionName];
+            let originalMessages = null;
+
             if (settings.enabled && settings.filterFromContext) {
                 // Process chat messages to remove BunnyMoTags from AI context
                 if (chat && Array.isArray(chat)) {
                     // Temporarily filter BunnyMoTags from message content for AI context
-                    const originalMessages = chat.map(msg => ({
+                    originalMessages = chat.map(msg => ({
                         ...msg,
                         originalMes: msg.mes
                     }));
@@ -3310,23 +3312,22 @@ function initializeBunnyMoTagsContextFiltering() {
                             msg.mes = removeBunnyMoTagsFromString(msg.mes);
                         }
                     });
-                    
-                    // Call original Generate function
-                    const result = originalGenerate.apply(this, args);
-                    
-                    // Restore original messages after generation
+                }
+            }
+            
+            try {
+                // Call original Generate function
+                return await originalGenerate.apply(this, args);
+            } finally {
+                // Restore original messages after generation
+                if (originalMessages) {
                     originalMessages.forEach((originalMsg, index) => {
                         if (chat[index] && originalMsg.originalMes) {
                             chat[index].mes = originalMsg.originalMes;
                         }
                     });
-                    
-                    return result;
                 }
             }
-            
-            // If filtering disabled or no chat, call original function
-            return originalGenerate.apply(this, args);
         };
         
         CarrotDebug.init('✅ BunnyMoTags context filtering initialized');
