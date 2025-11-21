@@ -169,17 +169,17 @@ async function vectorizeFullsheetFromMessage(characterName, content) {
     return success;
 }
 
-function getCurrentContextLevel() {
-    // Synchronous function - must return immediately
-    if (fullsheetRAGLoaded && fullsheetAPI.getCurrentContextLevel) {
+async function getCurrentContextLevel() {
+    await fullsheetRAGPromise;
+    if (fullsheetAPI.getCurrentContextLevel) {
         return fullsheetAPI.getCurrentContextLevel();
     }
     return 'global'; // Default fallback
 }
 
-function getContextualLibrary() {
-    // Synchronous function - must return immediately
-    if (fullsheetRAGLoaded && fullsheetAPI.getContextualLibrary) {
+async function getContextualLibrary() {
+    await fullsheetRAGPromise;
+    if (fullsheetAPI.getContextualLibrary) {
         return fullsheetAPI.getContextualLibrary();
     }
     return {}; // Default fallback
@@ -8023,7 +8023,7 @@ function bindSettingsEvents() {
         return { source, model };
     }
 
-    function checkProviderChange() {
+    async function checkProviderChange() {
         const current = getCurrentProvider();
         const last = {
             source: ragState.lastEmbeddingSource,
@@ -8038,7 +8038,7 @@ function bindSettingsEvents() {
 
         // Check if there are any collections to re-vectorize
         // If no collections exist, don't show the warning
-        const library = fullsheetAPI.getContextualLibrary?.() || {};
+        const library = await getContextualLibrary() || {};
         const hasCollections = Object.keys(library).length > 0;
 
         if (!hasCollections) {
@@ -8070,15 +8070,18 @@ function bindSettingsEvents() {
     }
 
     // Check on initialization
-    checkProviderChange();
+    // Wrapped in async IIFE to handle await
+    (async () => {
+        await checkProviderChange();
+    })();
 
     // Re-check when vector source or model changes
     $('#carrot_rag_vector_source').on('change', () => {
-        setTimeout(checkProviderChange, 100);
+        setTimeout(async () => await checkProviderChange(), 100);
     });
 
-    $('#carrot_rag_openai_model, #carrot_rag_cohere_model, #carrot_rag_google_model, #carrot_rag_togetherai_model').on('change', checkProviderChange);
-    $('#carrot_rag_ollama_model, #carrot_rag_vllm_model, #carrot_rag_webllm_model').on('input', checkProviderChange);
+    $('#carrot_rag_openai_model, #carrot_rag_cohere_model, #carrot_rag_google_model, #carrot_rag_togetherai_model').on('change', async () => await checkProviderChange());
+    $('#carrot_rag_ollama_model, #carrot_rag_vllm_model, #carrot_rag_webllm_model').on('input', async () => await checkProviderChange());
 
     // Re-vectorize button handler
     $('#carrot_rag_revectorize_btn').on('click', async function() {
@@ -8093,7 +8096,7 @@ function bindSettingsEvents() {
             $btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin"></i> Re-vectorizing...');
 
             const context = ragState.contextLevel || 'global';
-            const library = fullsheetAPI.getContextualLibrary();
+            const library = await getContextualLibrary();
             const collections = Object.keys(library);
 
             if (collections.length === 0) {
@@ -8173,11 +8176,12 @@ function bindSettingsEvents() {
     // Initialize RAG system asynchronously
     (async () => {
         if (!window.__CarrotKernelRagInitialized) {
+            // Wait for dynamic import to complete
+            await fullsheetRAGPromise;
             await initializeRAG();
             window.__CarrotKernelRagInitialized = true;
 
             // Initialize chunk visualizer with fullsheet API
-            await fullsheetRAGPromise;
             initializeChunkVisualizer(fullsheetAPI);
         }
         if (ragState.enabled) {
@@ -8190,8 +8194,8 @@ function bindSettingsEvents() {
 
     // Show context selection popup for vectorization
     async function showContextSelectionPopup() {
-        return new Promise((resolve) => {
-            const currentContextLevel = getCurrentContextLevel();
+        return new Promise(async (resolve) => {
+            const currentContextLevel = await getCurrentContextLevel();
 
             const popup = $(`
                 <div class="carrot-popup-container rag-context-selection-popup" style="padding: 0; max-width: 600px; width: 90%;">
@@ -9243,7 +9247,8 @@ function bindSettingsEvents() {
 
         // Delete vector embeddings from the database
         try {
-            if (fullsheetRAGLoaded && fullsheetAPI.deleteEntireCollection) {
+            await fullsheetRAGPromise;
+            if (fullsheetAPI.deleteEntireCollection) {
                 CarrotDebug.ui(`🥕 Deleting vector collection: ${collectionId}`);
                 await fullsheetAPI.deleteEntireCollection(collectionId);
             }
