@@ -131,10 +131,8 @@ Auto-Activate: Lorebook enabled for character/chat/global
 - (Optional) BunnyMo lorebook for full functionality
 
 ### Step 1: Installation
-1. Download CarrotKernel extension files
-2. Place in: `SillyTavern/public/scripts/extensions/third-party/CarrotKernel/`
-3. Restart SillyTavern
-4. Enable CarrotKernel in Extensions menu
+1. Put the git link in the extension URL input.
+2. Enable CarrotKernel in Extensions menu
 
 ### Step 2: Quick Start
 1. **🔧 Enable Master Toggle**: Turn on CarrotKernel in Extension Settings
