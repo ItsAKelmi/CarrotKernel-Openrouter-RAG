@@ -236,6 +236,34 @@ carrotStyleSheet.textContent = `
         }
     }
 
+    .ck-panel.ck-panel--mobile {
+        width: auto !important;
+        height: auto !important;
+        min-height: 0 !important;
+        max-width: none !important;
+        overflow-y: auto !important;
+        overscroll-behavior: contain;
+        border-radius: var(--ck-radius-lg);
+    }
+
+    .ck-panel.ck-panel--mobile .ck-header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+    }
+
+    .ck-connection.ck-connection--hidden {
+        display: none !important;
+    }
+
+    .ck-config-panel.ck-config-panel--mobile {
+        width: auto !important;
+        height: auto !important;
+        max-width: none !important;
+        overflow-y: auto !important;
+        overscroll-behavior: contain;
+    }
+
 
 
     .ck-panel--active {
@@ -1708,6 +1736,33 @@ const getMessageSourceIcon = (messageSource) => {
     return icons[messageSource] || '❓';
 };
 
+const CK_MOBILE_PANEL_QUERY = '(max-width: 768px), (hover: none) and (pointer: coarse)';
+
+const isMobilePanelViewport = () => window.matchMedia(CK_MOBILE_PANEL_QUERY).matches;
+
+const getMobilePanelMetrics = () => {
+    const topBarHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--topBarBlockSize')) || 45;
+    const viewportHeight = window.visualViewport?.height || window.innerHeight;
+    const topBoundary = Math.max(8, topBarHeight + 8);
+    const sendForm = document.getElementById('send_form');
+    const sendFormRect = sendForm?.getBoundingClientRect();
+    const bottomBoundary = sendFormRect && sendFormRect.top > topBoundary + 160
+        ? Math.min(viewportHeight - 8, sendFormRect.top - 8)
+        : viewportHeight - 12;
+    const availableHeight = Math.max(220, bottomBoundary - topBoundary);
+
+    return { topBoundary, availableHeight };
+};
+
+const centerMobilePanel = (element, topBoundary, availableHeight) => {
+    const measuredHeight = Math.min(
+        availableHeight,
+        Math.max(0, element.getBoundingClientRect().height || element.scrollHeight)
+    );
+    const top = Math.max(topBoundary, topBoundary + ((availableHeight - measuredHeight) / 2));
+    element.style.setProperty('top', `${top}px`, 'important');
+};
+
 // Get device-specific ID for per-device settings
 const init = () => {
 
@@ -1751,6 +1806,7 @@ let startX = 0, startY = 0;
 let offsetX = 0, offsetY = 0;
 let hasMoved = false;
 let currentPointerId = null;
+let positionConfigPanel = () => {};
 
 // Double-tap detection
 let lastTapTime = 0;
@@ -1873,6 +1929,7 @@ trigger.addEventListener('pointerup', (e) => {
             configPanel.classList.toggle('ck-config-panel--active');
 
             if (!wasActive && configPanel.classList.contains('ck-config-panel--active')) {
+                positionConfigPanel();
                 setupDocumentClickHandler(configPanel, true);
             }
 
@@ -1903,6 +1960,7 @@ trigger.addEventListener('pointerup', (e) => {
                 panel.classList.toggle('ck-panel--active');
 
                 if (!wasActive && panel.classList.contains('ck-panel--active')) {
+                    positionPanel();
                     setupDocumentClickHandler(panel, false);
                 }
 
@@ -2037,13 +2095,14 @@ function disableRepositionMode() {
             panel.classList.remove('ck-panel--active');
         }
 
-        const wasActive = configPanel.classList.contains('ck-config-panel--active');
-        configPanel.classList.toggle('ck-config-panel--active');
+    const wasActive = configPanel.classList.contains('ck-config-panel--active');
+    configPanel.classList.toggle('ck-config-panel--active');
 
-        // Add click-outside handler when opening config panel
-        if (!wasActive && configPanel.classList.contains('ck-config-panel--active')) {
-            setupDocumentClickHandler(configPanel, true);
-        }
+    // Add click-outside handler when opening config panel
+    if (!wasActive && configPanel.classList.contains('ck-config-panel--active')) {
+        positionConfigPanel();
+        setupDocumentClickHandler(configPanel, true);
+    }
     });
 
 
@@ -2138,6 +2197,9 @@ function disableRepositionMode() {
             if (panel.classList.contains('ck-panel--active')) {
                 positionPanel();
             }
+            if (configPanel.classList.contains('ck-config-panel--active')) {
+                positionConfigPanel();
+            }
         });
 
         // Add debug toggle button at the top of the panel
@@ -2227,6 +2289,43 @@ function disableRepositionMode() {
         const triggerRect = trigger.getBoundingClientRect();
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
+        const isMobile = isMobilePanelViewport();
+
+        panel.classList.toggle('ck-panel--mobile', isMobile);
+        connectionLine.classList.toggle('ck-connection--hidden', isMobile);
+
+        if (isMobile) {
+            const { topBoundary, availableHeight } = getMobilePanelMetrics();
+            panel.style.setProperty('position', 'fixed', 'important');
+            panel.style.setProperty('left', '10px', 'important');
+            panel.style.setProperty('right', '10px', 'important');
+            panel.style.setProperty('top', `${topBoundary}px`, 'important');
+            panel.style.setProperty('bottom', 'auto', 'important');
+            panel.style.setProperty('width', 'auto', 'important');
+            panel.style.setProperty('height', 'auto', 'important');
+            panel.style.setProperty('min-height', '0', 'important');
+            panel.style.setProperty('max-width', 'none', 'important');
+            panel.style.setProperty('max-height', `${availableHeight}px`, 'important');
+            panel.style.setProperty('transform', 'translateY(0) scale(1)', 'important');
+            panel.style.setProperty('margin-top', '0px', 'important');
+            panel.style.setProperty('z-index', '10002', 'important');
+            centerMobilePanel(panel, topBoundary, availableHeight);
+            connectionLine.style.display = 'none';
+            return;
+        }
+
+        connectionLine.style.display = '';
+        panel.style.removeProperty('right');
+        panel.style.removeProperty('bottom');
+        panel.style.removeProperty('top');
+        panel.style.removeProperty('width');
+        panel.style.removeProperty('height');
+        panel.style.removeProperty('min-height');
+        panel.style.removeProperty('max-width');
+        panel.style.removeProperty('max-height');
+        panel.style.removeProperty('transform');
+        panel.style.removeProperty('margin-top');
+        panel.style.removeProperty('z-index');
 
         // Get current panel width or use default
         const currentWidth = panel.offsetWidth || 400;
@@ -2448,6 +2547,39 @@ function disableRepositionMode() {
             configPanel.append(resetPositionRow);
         }
         document.body.append(configPanel);
+
+        positionConfigPanel = () => {
+            const isMobile = isMobilePanelViewport();
+            configPanel.classList.toggle('ck-config-panel--mobile', isMobile);
+
+            if (isMobile) {
+                const { topBoundary, availableHeight } = getMobilePanelMetrics();
+                configPanel.style.setProperty('position', 'fixed', 'important');
+                configPanel.style.setProperty('left', '10px', 'important');
+                configPanel.style.setProperty('right', '10px', 'important');
+                configPanel.style.setProperty('top', `${topBoundary}px`, 'important');
+                configPanel.style.setProperty('bottom', 'auto', 'important');
+                configPanel.style.setProperty('width', 'auto', 'important');
+                configPanel.style.setProperty('height', 'auto', 'important');
+                configPanel.style.setProperty('max-width', 'none', 'important');
+                configPanel.style.setProperty('max-height', `${availableHeight}px`, 'important');
+                configPanel.style.setProperty('overflow-y', 'auto', 'important');
+                configPanel.style.setProperty('transform', 'translateY(0) scale(1)', 'important');
+                centerMobilePanel(configPanel, topBoundary, availableHeight);
+                return;
+            }
+
+            configPanel.style.removeProperty('right');
+            configPanel.style.removeProperty('bottom');
+            configPanel.style.removeProperty('height');
+            configPanel.style.removeProperty('max-width');
+            configPanel.style.removeProperty('max-height');
+            configPanel.style.removeProperty('overflow-y');
+            configPanel.style.removeProperty('transform');
+            configPanel.style.left = '16px';
+            configPanel.style.top = '70px';
+            configPanel.style.width = '300px';
+        };
     }
 
     let entries = [];
