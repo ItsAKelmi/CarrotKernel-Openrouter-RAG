@@ -2033,11 +2033,20 @@ trigger.addEventListener('pointerup', (e) => {
                 if (wasActive) {
                     panel.classList.remove('ck-panel--active');
                 } else {
-                    panel.classList.remove('ck-panel--active');
+                    // Cancel any leftover Web Animations from previous opens so the
+                    // CSS keyframe is the only animation in play.
+                    if (typeof panel.getAnimations === 'function') {
+                        panel.getAnimations().forEach((a) => a.cancel());
+                    }
+                    // Add the class first so the CSS animation rule is active,
+                    // then force-restart it by overriding with 'none', reflowing,
+                    // and clearing the override. The browser sees the animation
+                    // property transition from 'none' back to ck-fade-in and
+                    // replays it every time, not just on first open.
+                    panel.classList.add('ck-panel--active');
                     panel.style.animation = 'none';
                     void panel.offsetHeight;
                     panel.style.removeProperty('animation');
-                    panel.classList.add('ck-panel--active');
                 }
 
                 if (!wasActive && panel.classList.contains('ck-panel--active')) {
@@ -2465,19 +2474,70 @@ function disableRepositionMode() {
         }
     };
 
+    // rAF-based center tracking for entry expand/collapse. The previous
+    // prediction-based approach was brittle (any mismatch between predicted
+    // and actual height left the panel off-center for ~600ms), and frequent
+    // setProperty('top', ...) calls fought the CSS `transition: all 0.6s`
+    // spring rule on .ck-panel — each set restarted the transition, so the
+    // panel's rendered top lagged behind the growing content and the bottom
+    // edge slid off-screen.
+    //
+    // Here we instead disable the panel's CSS transition for the duration of
+    // the expand animation and update `top` on every animation frame to the
+    // panel's *actual* centered position. With the transition off, each
+    // setProperty is instant, so the panel tracks the growing/shrinking
+    // height at 60fps and visually stays centered the whole way through.
+    let trackingFrameId = null;
+    let trackingDeadline = 0;
+    const TRACKING_DURATION_MS = 720;
+
+    const stopExpandTracking = () => {
+        if (trackingFrameId !== null) {
+            cancelAnimationFrame(trackingFrameId);
+            trackingFrameId = null;
+        }
+        panel.style.removeProperty('transition');
+    };
+
     const recenterMobilePanelSoon = () => {
-        const recenter = () => {
-            if (panel.classList.contains('ck-panel--active') && isMobilePanelViewport()) {
-                positionPanel();
+        // On desktop we don't center vertically, so there's nothing to track.
+        if (!isMobilePanelViewport()) {
+            stopExpandTracking();
+            return;
+        }
+
+        trackingDeadline = performance.now() + TRACKING_DURATION_MS;
+
+        // Already running — just extend the deadline so this expand finishes
+        // smoothly before we restore the transition.
+        if (trackingFrameId !== null) return;
+
+        // Suspend the spring transition so each top update lands immediately.
+        panel.style.setProperty('transition', 'none', 'important');
+
+        const tick = () => {
+            trackingFrameId = null;
+            if (!panel.classList.contains('ck-panel--active') || !isMobilePanelViewport()) {
+                stopExpandTracking();
+                return;
+            }
+
+            const { topBoundary, availableHeight } = getMobilePanelMetrics();
+            const panelHeight = panel.getBoundingClientRect().height;
+            const newTop = Math.max(
+                topBoundary,
+                topBoundary + ((availableHeight - panelHeight) / 2),
+            );
+            panel.style.setProperty('top', `${newTop}px`, 'important');
+
+            if (performance.now() < trackingDeadline) {
+                trackingFrameId = requestAnimationFrame(tick);
+            } else {
+                stopExpandTracking();
             }
         };
 
-        requestAnimationFrame(() => {
-            recenter();
-            requestAnimationFrame(recenter);
-        });
-
-        [80, 180, 360, 560].forEach((delay) => setTimeout(recenter, delay));
+        trackingFrameId = requestAnimationFrame(tick);
     };
 
     const keepEntryInMobilePanelView = (entryElement) => {
@@ -2501,10 +2561,30 @@ function disableRepositionMode() {
         }
     };
 
+    // Throttle the resize observer and silence it while an expand/collapse
+    // animation is running. Otherwise it fires every frame as the panel grows
+    // and constantly re-sets `top` to a transient mid-animation centered
+    // value, which fights with the rAF centering loop.
+    let resizeObserverPending = false;
+    let lastResizeObserverRun = 0;
+    const RESIZE_OBSERVER_THROTTLE_MS = 120;
     const mobilePanelResizeObserver = new ResizeObserver(() => {
-        if (panel.classList.contains('ck-panel--active') && isMobilePanelViewport()) {
-            requestAnimationFrame(positionPanel);
-        }
+        if (resizeObserverPending) return;
+        if (!panel.classList.contains('ck-panel--active') || !isMobilePanelViewport()) return;
+        if (trackingFrameId !== null) return;
+
+        const now = performance.now();
+        const elapsed = now - lastResizeObserverRun;
+        const wait = Math.max(0, RESIZE_OBSERVER_THROTTLE_MS - elapsed);
+
+        resizeObserverPending = true;
+        setTimeout(() => {
+            resizeObserverPending = false;
+            lastResizeObserverRun = performance.now();
+            if (trackingFrameId === null && panel.classList.contains('ck-panel--active') && isMobilePanelViewport()) {
+                positionPanel();
+            }
+        }, wait);
     });
     mobilePanelResizeObserver.observe(panel);
 
