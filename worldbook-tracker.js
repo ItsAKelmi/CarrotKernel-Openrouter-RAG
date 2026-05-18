@@ -237,13 +237,21 @@ carrotStyleSheet.textContent = `
     }
 
     .ck-panel.ck-panel--mobile {
+        --ck-mobile-panel-max-height: calc(100vh - 64px);
         width: auto !important;
         height: auto !important;
         min-height: 0 !important;
         max-width: none !important;
-        overflow-y: auto !important;
+        max-height: var(--ck-mobile-panel-max-height) !important;
+        overflow: hidden !important;
         overscroll-behavior: contain;
         border-radius: var(--ck-radius-lg);
+    }
+
+    .ck-panel.ck-panel--mobile .ck-content {
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
     }
 
     .ck-panel.ck-panel--mobile .ck-header {
@@ -257,9 +265,11 @@ carrotStyleSheet.textContent = `
     }
 
     .ck-config-panel.ck-config-panel--mobile {
+        --ck-mobile-panel-max-height: calc(100vh - 64px);
         width: auto !important;
         height: auto !important;
         max-width: none !important;
+        max-height: var(--ck-mobile-panel-max-height) !important;
         overflow-y: auto !important;
         overscroll-behavior: contain;
     }
@@ -803,6 +813,15 @@ carrotStyleSheet.textContent = `
         max-height: 600px;
         opacity: 1;
         animation: ck-debug-expand 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .ck-panel.ck-panel--mobile .ck-debug {
+        margin-left: 0;
+    }
+
+    .ck-panel.ck-panel--mobile .ck-debug--scrollable {
+        overflow-y: auto;
+        overscroll-behavior: contain;
     }
 
     .ck-debug__content {
@@ -1737,21 +1756,18 @@ const getMessageSourceIcon = (messageSource) => {
 };
 
 const CK_MOBILE_PANEL_QUERY = '(max-width: 768px), (hover: none) and (pointer: coarse)';
+const CK_MOBILE_PANEL_MARGIN = 32;
 
 const isMobilePanelViewport = () => window.matchMedia(CK_MOBILE_PANEL_QUERY).matches;
 
 const getMobilePanelMetrics = () => {
     const topBarHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--topBarBlockSize')) || 45;
     const viewportHeight = window.visualViewport?.height || window.innerHeight;
-    const topBoundary = Math.max(8, topBarHeight + 8);
-    const sendForm = document.getElementById('send_form');
-    const sendFormRect = sendForm?.getBoundingClientRect();
-    const bottomBoundary = sendFormRect && sendFormRect.top > topBoundary + 160
-        ? Math.min(viewportHeight - 8, sendFormRect.top - 8)
-        : viewportHeight - 12;
-    const availableHeight = Math.max(220, bottomBoundary - topBoundary);
+    const topBoundary = Math.max(CK_MOBILE_PANEL_MARGIN, topBarHeight + 8);
+    const bottomBoundary = Math.max(topBoundary + 180, viewportHeight - CK_MOBILE_PANEL_MARGIN);
+    const availableHeight = Math.max(180, bottomBoundary - topBoundary);
 
-    return { topBoundary, availableHeight };
+    return { topBoundary, bottomBoundary, availableHeight };
 };
 
 const centerMobilePanel = (element, topBoundary, availableHeight) => {
@@ -1761,6 +1777,12 @@ const centerMobilePanel = (element, topBoundary, availableHeight) => {
     );
     const top = Math.max(topBoundary, topBoundary + ((availableHeight - measuredHeight) / 2));
     element.style.setProperty('top', `${top}px`, 'important');
+};
+
+const getMobileDebugMaxHeight = (panelElement) => {
+    const { availableHeight } = getMobilePanelMetrics();
+    const headerHeight = panelElement?.querySelector('.ck-header')?.getBoundingClientRect().height || 64;
+    return Math.max(180, availableHeight - headerHeight - 96);
 };
 
 // Get device-specific ID for per-device settings
@@ -1957,7 +1979,15 @@ trigger.addEventListener('pointerup', (e) => {
                 }
 
                 const wasActive = panel.classList.contains('ck-panel--active');
-                panel.classList.toggle('ck-panel--active');
+                if (wasActive) {
+                    panel.classList.remove('ck-panel--active');
+                } else {
+                    panel.classList.remove('ck-panel--active');
+                    panel.style.animation = 'none';
+                    void panel.offsetHeight;
+                    panel.style.removeProperty('animation');
+                    panel.classList.add('ck-panel--active');
+                }
 
                 if (!wasActive && panel.classList.contains('ck-panel--active')) {
                     positionPanel();
@@ -2296,6 +2326,7 @@ function disableRepositionMode() {
 
         if (isMobile) {
             const { topBoundary, availableHeight } = getMobilePanelMetrics();
+            panel.style.setProperty('--ck-mobile-panel-max-height', `${availableHeight}px`);
             panel.style.setProperty('position', 'fixed', 'important');
             panel.style.setProperty('left', '10px', 'important');
             panel.style.setProperty('right', '10px', 'important');
@@ -2306,7 +2337,7 @@ function disableRepositionMode() {
             panel.style.setProperty('min-height', '0', 'important');
             panel.style.setProperty('max-width', 'none', 'important');
             panel.style.setProperty('max-height', `${availableHeight}px`, 'important');
-            panel.style.setProperty('transform', 'translateY(0) scale(1)', 'important');
+            panel.style.removeProperty('transform');
             panel.style.setProperty('margin-top', '0px', 'important');
             panel.style.setProperty('z-index', '10002', 'important');
             centerMobilePanel(panel, topBoundary, availableHeight);
@@ -2322,6 +2353,7 @@ function disableRepositionMode() {
         panel.style.removeProperty('height');
         panel.style.removeProperty('min-height');
         panel.style.removeProperty('max-width');
+        panel.style.removeProperty('--ck-mobile-panel-max-height');
         panel.style.removeProperty('max-height');
         panel.style.removeProperty('transform');
         panel.style.removeProperty('margin-top');
@@ -2352,7 +2384,7 @@ function disableRepositionMode() {
             // Position below trigger
             panelTop = triggerRect.bottom - 30;
             panel.style.setProperty('top', `${panelTop}px`, 'important');
-            panel.style.setProperty('transform', 'translateY(0) scale(1)', 'important');
+            panel.style.removeProperty('transform');
             panel.style.setProperty('margin-top', '0px', 'important');
             panel.style.bottom = 'auto';
             panel.style.maxHeight = `${Math.min(maxPanelHeight, spaceBelow - 20)}px`;
@@ -2554,6 +2586,7 @@ function disableRepositionMode() {
 
             if (isMobile) {
                 const { topBoundary, availableHeight } = getMobilePanelMetrics();
+                configPanel.style.setProperty('--ck-mobile-panel-max-height', `${availableHeight}px`);
                 configPanel.style.setProperty('position', 'fixed', 'important');
                 configPanel.style.setProperty('left', '10px', 'important');
                 configPanel.style.setProperty('right', '10px', 'important');
@@ -2573,6 +2606,7 @@ function disableRepositionMode() {
             configPanel.style.removeProperty('bottom');
             configPanel.style.removeProperty('height');
             configPanel.style.removeProperty('max-width');
+            configPanel.style.removeProperty('--ck-mobile-panel-max-height');
             configPanel.style.removeProperty('max-height');
             configPanel.style.removeProperty('overflow-y');
             configPanel.style.removeProperty('transform');
@@ -3405,14 +3439,26 @@ function disableRepositionMode() {
                     if (isExpanded) {
                         // Collapse
                         debugContainer.style.maxHeight = '0';
+                        debugContainer.classList.remove('ck-debug--scrollable');
                         entryDiv.classList.remove('ck-entry--expanded');
                         if (expandIndicator) expandIndicator.textContent = '▼ Click for details';
                     } else {
                         // Expand
-                        debugContainer.style.maxHeight = debugContainer.scrollHeight + 'px';
+                        const debugMaxHeight = isMobilePanelViewport()
+                            ? Math.min(debugContainer.scrollHeight, getMobileDebugMaxHeight(panel))
+                            : debugContainer.scrollHeight;
+                        debugContainer.style.maxHeight = `${debugMaxHeight}px`;
+                        debugContainer.classList.toggle('ck-debug--scrollable', debugContainer.scrollHeight > debugMaxHeight + 1);
                         entryDiv.classList.add('ck-entry--expanded');
                         if (expandIndicator) expandIndicator.textContent = '▲ Click to collapse';
                     }
+
+                    requestAnimationFrame(() => {
+                        positionPanel();
+                        if (!isExpanded && isMobilePanelViewport()) {
+                            entryDiv.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                        }
+                    });
                 });
 
                 entryDiv.appendChild(debugContainer);
