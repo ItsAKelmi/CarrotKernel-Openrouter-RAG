@@ -2465,6 +2465,49 @@ function disableRepositionMode() {
         }
     };
 
+    const recenterMobilePanelSoon = () => {
+        const recenter = () => {
+            if (panel.classList.contains('ck-panel--active') && isMobilePanelViewport()) {
+                positionPanel();
+            }
+        };
+
+        requestAnimationFrame(() => {
+            recenter();
+            requestAnimationFrame(recenter);
+        });
+
+        [80, 180, 360, 560].forEach((delay) => setTimeout(recenter, delay));
+    };
+
+    const keepEntryInMobilePanelView = (entryElement) => {
+        if (!entryElement || !isMobilePanelViewport()) {
+            return;
+        }
+
+        const content = panel.querySelector('.ck-content');
+        if (!content || !content.contains(entryElement)) {
+            return;
+        }
+
+        const contentRect = content.getBoundingClientRect();
+        const entryRect = entryElement.getBoundingClientRect();
+        const padding = 12;
+
+        if (entryRect.top < contentRect.top + padding) {
+            content.scrollTop -= (contentRect.top + padding) - entryRect.top;
+        } else if (entryRect.bottom > contentRect.bottom - padding) {
+            content.scrollTop += entryRect.bottom - (contentRect.bottom - padding);
+        }
+    };
+
+    const mobilePanelResizeObserver = new ResizeObserver(() => {
+        if (panel.classList.contains('ck-panel--active') && isMobilePanelViewport()) {
+            requestAnimationFrame(positionPanel);
+        }
+    });
+    mobilePanelResizeObserver.observe(panel);
+
 
     const configPanel = document.createElement('div'); {
         configPanel.classList.add('ck-config-panel');
@@ -3504,12 +3547,11 @@ function disableRepositionMode() {
                         if (expandIndicator) expandIndicator.textContent = '▲ Click to collapse';
                     }
 
-                    requestAnimationFrame(() => {
-                        positionPanel();
-                        if (!isExpanded && isMobilePanelViewport()) {
-                            entryDiv.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-                        }
-                    });
+                    recenterMobilePanelSoon();
+                    if (!isExpanded && isMobilePanelViewport()) {
+                        requestAnimationFrame(() => keepEntryInMobilePanelView(entryDiv));
+                        setTimeout(() => keepEntryInMobilePanelView(entryDiv), 180);
+                    }
                 });
 
                 entryDiv.appendChild(debugContainer);
