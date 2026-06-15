@@ -206,37 +206,31 @@ function getVectorSettings() {
         google_model: 'text-embedding-005',
     };
 
+    const source = coreVectorSettings.source ?? defaults.source;
+    const modelName = `${source}_model`;
     const coreVectorSettings = extension_settings?.vectors;
-    if (coreVectorSettings) {
-        return {
-            source: coreVectorSettings.source ?? defaults.source,
-            use_alt_endpoint: coreVectorSettings.use_alt_endpoint ?? defaults.use_alt_endpoint,
-            alt_endpoint_url: coreVectorSettings.alt_endpoint_url ?? defaults.alt_endpoint_url,
-            togetherai_model: coreVectorSettings.togetherai_model ?? defaults.togetherai_model,
-            openai_model: coreVectorSettings.openai_model ?? defaults.openai_model,
-            cohere_model: coreVectorSettings.cohere_model ?? defaults.cohere_model,
-            ollama_model: coreVectorSettings.ollama_model ?? defaults.ollama_model,
-            ollama_keep: coreVectorSettings.ollama_keep ?? defaults.ollama_keep,
-            vllm_model: coreVectorSettings.vllm_model ?? defaults.vllm_model,
-            webllm_model: coreVectorSettings.webllm_model ?? defaults.webllm_model,
-            google_model: coreVectorSettings.google_model ?? defaults.google_model,
-        };
-    }
-
-    const ragSettings = extension_settings[extensionName]?.rag || {};
     return {
-        source: ragSettings.vectorSource || defaults.source,
-        use_alt_endpoint: ragSettings.useAltUrl ?? defaults.use_alt_endpoint,
-        alt_endpoint_url: ragSettings.altUrl || defaults.alt_endpoint_url,
-        togetherai_model: ragSettings.togetheraiModel || defaults.togetherai_model,
-        openai_model: ragSettings.openaiModel || defaults.openai_model,
-        cohere_model: ragSettings.cohereModel || defaults.cohere_model,
-        ollama_model: ragSettings.ollamaModel || defaults.ollama_model,
-        ollama_keep: ragSettings.ollamaKeep ?? defaults.ollama_keep,
-        vllm_model: ragSettings.vllmModel || defaults.vllm_model,
-        webllm_model: ragSettings.webllmModel || defaults.webllm_model,
-        google_model: ragSettings.googleModel || defaults.google_model,
+        source,
+        use_alt_endpoint: coreVectorSettings.use_alt_endpoint ?? defaults.use_alt_endpoint,
+        alt_endpoint_url: coreVectorSettings.alt_endpoint_url ?? defaults.alt_endpoint_url,
+        
+        [modelName]: coreVectorSettings[modelName] ?? defaults[modelName],
     };
+
+    // const ragSettings = extension_settings[extensionName]?.rag || {};
+    // return {
+    //     source: ragSettings.vectorSource || defaults.source,
+    //     use_alt_endpoint: ragSettings.useAltUrl ?? defaults.use_alt_endpoint,
+    //     alt_endpoint_url: ragSettings.altUrl || defaults.alt_endpoint_url,
+    //     togetherai_model: ragSettings.togetheraiModel || defaults.togetherai_model,
+    //     openai_model: ragSettings.openaiModel || defaults.openai_model,
+    //     cohere_model: ragSettings.cohereModel || defaults.cohere_model,
+    //     ollama_model: ragSettings.ollamaModel || defaults.ollama_model,
+    //     ollama_keep: ragSettings.ollamaKeep ?? defaults.ollama_keep,
+    //     vllm_model: ragSettings.vllmModel || defaults.vllm_model,
+    //     webllm_model: ragSettings.webllmModel || defaults.webllm_model,
+    //     google_model: ragSettings.googleModel || defaults.google_model,
+    // };
 }
 
 /**
@@ -249,60 +243,7 @@ function getVectorsRequestBody(overrides = {}) {
     const vectors = getVectorSettings();
     const body = Object.assign({}, overrides);
 
-    switch (vectors.source) {
-        case 'extras':
-            body.extrasUrl = extension_settings.apiUrl;
-            body.extrasKey = extension_settings.apiKey;
-            break;
-        case 'togetherai':
-            body.model = vectors.togetherai_model;
-            break;
-        case 'openai':
-        case 'mistral':
-            body.model = vectors.openai_model;
-            break;
-        case 'nomicai':
-            // No client configuration required; handled server-side with stored secret
-            break;
-        case 'cohere':
-            body.model = vectors.cohere_model;
-            break;
-        case 'ollama':
-            body.model = vectors.ollama_model;
-            body.apiUrl = vectors.use_alt_endpoint && vectors.alt_endpoint_url
-                ? vectors.alt_endpoint_url
-                : textgenerationwebui_settings.server_urls[textgen_types.OLLAMA];
-            body.keep = !!vectors.ollama_keep;
-            break;
-        case 'llamacpp':
-            body.apiUrl = vectors.use_alt_endpoint && vectors.alt_endpoint_url
-                ? vectors.alt_endpoint_url
-                : textgenerationwebui_settings.server_urls[textgen_types.LLAMACPP];
-            break;
-        case 'vllm':
-            body.model = vectors.vllm_model;
-            body.apiUrl = vectors.use_alt_endpoint && vectors.alt_endpoint_url
-                ? vectors.alt_endpoint_url
-                : textgenerationwebui_settings.server_urls[textgen_types.VLLM];
-            break;
-        case 'webllm':
-            body.model = vectors.webllm_model;
-            break;
-        case 'palm':
-            body.model = vectors.google_model;
-            body.api = 'makersuite';
-            break;
-        case 'vertexai':
-            body.model = vectors.google_model;
-            body.api = 'vertexai';
-            body.vertexai_auth_mode = oai_settings.vertexai_auth_mode;
-            body.vertexai_region = oai_settings.vertexai_region;
-            body.vertexai_express_project_id = oai_settings.vertexai_express_project_id;
-            break;
-        default:
-            break;
-    }
-
+    body.model = vectors[`${vectors.source}_model`];
     return body;
 }
 
