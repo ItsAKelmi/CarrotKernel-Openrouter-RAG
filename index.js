@@ -7845,8 +7845,8 @@ function bindSettingsEvents() {
         });
     }
 
-    #('#carrot_rag_vector_source').text(extension_settings.vector?.source);
-    #('#carrot_rag_vector_model').text(extension_settings.vector?[`${extension_settings.vector?.source}_model`]);
+    $('#carrot_rag_vector_source').text(extension_settings.vector?.source);
+    $('#carrot_rag_vector_model').text(extension_settings.vector?[`${extension_settings.vector?.source}_model`]);
         
     // Vectorization source and model settings
     // $('#carrot_rag_vector_source').val(ragState.vectorSource || 'transformers').on('change', async function() {
