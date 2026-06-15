@@ -7675,39 +7675,41 @@ function bindSettingsEvents() {
         ragState.vectorSource = baseVectors.source ?? ragState.vectorSource ?? 'transformers';
         ragState.useAltUrl = baseVectors.use_alt_endpoint ?? ragState.useAltUrl ?? false;
         ragState.altUrl = baseVectors.alt_endpoint_url ?? ragState.altUrl ?? '';
-        ragState.openaiModel = baseVectors.openai_model ?? ragState.openaiModel ?? 'text-embedding-ada-002';
-        ragState.cohereModel = baseVectors.cohere_model ?? ragState.cohereModel ?? 'embed-english-v3.0';
-        ragState.googleModel = baseVectors.google_model ?? ragState.googleModel ?? 'text-embedding-005';
-        ragState.togetheraiModel = baseVectors.togetherai_model ?? ragState.togetheraiModel ?? 'togethercomputer/m2-bert-80M-32k-retrieval';
-        ragState.ollamaModel = baseVectors.ollama_model ?? ragState.ollamaModel ?? 'mxbai-embed-large';
-        ragState.ollamaKeep = baseVectors.ollama_keep ?? ragState.ollamaKeep ?? false;
-        ragState.vllmModel = baseVectors.vllm_model ?? ragState.vllmModel ?? '';
-        ragState.webllmModel = baseVectors.webllm_model ?? ragState.webllmModel ?? '';
+        ragState[`${baseVectors.source}Model`] = baseVectors[`${baseVectors.source}_model`]
+        
+        // ragState.openaiModel = baseVectors.openai_model ?? ragState.openaiModel ?? 'text-embedding-ada-002';
+        // ragState.cohereModel = baseVectors.cohere_model ?? ragState.cohereModel ?? 'embed-english-v3.0';
+        // ragState.googleModel = baseVectors.google_model ?? ragState.googleModel ?? 'text-embedding-005';
+        // ragState.togetheraiModel = baseVectors.togetherai_model ?? ragState.togetheraiModel ?? 'togethercomputer/m2-bert-80M-32k-retrieval';
+        // ragState.ollamaModel = baseVectors.ollama_model ?? ragState.ollamaModel ?? 'mxbai-embed-large';
+        // ragState.ollamaKeep = baseVectors.ollama_keep ?? ragState.ollamaKeep ?? false;
+        // ragState.vllmModel = baseVectors.vllm_model ?? ragState.vllmModel ?? '';
+        // ragState.webllmModel = baseVectors.webllm_model ?? ragState.webllmModel ?? '';
     };
 
-    const syncBaseVectorsFromRag = () => {
-        const baseVectors = extension_settings.vectors;
-        if (!baseVectors) {
-            return;
-        }
+    // const syncBaseVectorsFromRag = () => {
+    //     const baseVectors = extension_settings.vectors;
+    //     if (!baseVectors) {
+    //         return;
+    //     }
 
-        baseVectors.source = ragState.vectorSource ?? baseVectors.source ?? 'transformers';
-        baseVectors.use_alt_endpoint = ragState.useAltUrl ?? baseVectors.use_alt_endpoint ?? false;
-        if (ragState.altUrl !== undefined) baseVectors.alt_endpoint_url = ragState.altUrl;
-        if (ragState.openaiModel !== undefined) baseVectors.openai_model = ragState.openaiModel;
-        if (ragState.cohereModel !== undefined) baseVectors.cohere_model = ragState.cohereModel;
-        if (ragState.googleModel !== undefined) baseVectors.google_model = ragState.googleModel;
-        if (ragState.togetheraiModel !== undefined) baseVectors.togetherai_model = ragState.togetheraiModel;
-        if (ragState.ollamaModel !== undefined) baseVectors.ollama_model = ragState.ollamaModel;
-        if (typeof ragState.ollamaKeep === 'boolean') baseVectors.ollama_keep = ragState.ollamaKeep;
-        if (ragState.vllmModel !== undefined) baseVectors.vllm_model = ragState.vllmModel;
-        if (ragState.webllmModel !== undefined) baseVectors.webllm_model = ragState.webllmModel;
-    };
+    //     baseVectors.source = ragState.vectorSource ?? baseVectors.source ?? 'transformers';
+    //     baseVectors.use_alt_endpoint = ragState.useAltUrl ?? baseVectors.use_alt_endpoint ?? false;
+    //     if (ragState.altUrl !== undefined) baseVectors.alt_endpoint_url = ragState.altUrl;
+    //     if (ragState.openaiModel !== undefined) baseVectors.openai_model = ragState.openaiModel;
+    //     if (ragState.cohereModel !== undefined) baseVectors.cohere_model = ragState.cohereModel;
+    //     if (ragState.googleModel !== undefined) baseVectors.google_model = ragState.googleModel;
+    //     if (ragState.togetheraiModel !== undefined) baseVectors.togetherai_model = ragState.togetheraiModel;
+    //     if (ragState.ollamaModel !== undefined) baseVectors.ollama_model = ragState.ollamaModel;
+    //     if (typeof ragState.ollamaKeep === 'boolean') baseVectors.ollama_keep = ragState.ollamaKeep;
+    //     if (ragState.vllmModel !== undefined) baseVectors.vllm_model = ragState.vllmModel;
+    //     if (ragState.webllmModel !== undefined) baseVectors.webllm_model = ragState.webllmModel;
+    // };
 
     syncRagVectorsFromBase();
 
     const persistRagSettings = async () => {
-        syncBaseVectorsFromRag();
+        // syncBaseVectorsFromRag();
         await saveRAGSettings({ ...ragState });
     };
 
@@ -7843,137 +7845,141 @@ function bindSettingsEvents() {
         });
     }
 
+    #('#carrot_rag_vector_source').text(extension_settings.vector?.source);
+    #('#carrot_rag_vector_model').text(extension_settings.vector?[`${extension_settings.vector?.source}_model`]);
+        
     // Vectorization source and model settings
-    $('#carrot_rag_vector_source').val(ragState.vectorSource || 'transformers').on('change', async function() {
-        ragState.vectorSource = String($(this).val());
-        await persistRagSettings();
-        toggleRAGVectorSettings();
-        toastr.info(`Vectorization source changed to: ${ragState.vectorSource}`);
-    });
+    // $('#carrot_rag_vector_source').val(ragState.vectorSource || 'transformers').on('change', async function() {
+    //     // ragState.vectorSource = String($(this).val());
+    //     await persistRagSettings();
+    //     toggleRAGVectorSettings();
+    //     toastr.info(`Vectorization source changed to: ${ragState.vectorSource}`);
+    // });
 
-    $('#carrot_rag_openai_model').val(ragState.openaiModel || 'text-embedding-ada-002').on('change', async function() {
-        ragState.openaiModel = String($(this).val());
-        await persistRagSettings();
-    });
+    // $('#carrot_rag_openai_model').val(ragState.openaiModel || 'text-embedding-ada-002').on('change', async function() {
+    //     ragState.openaiModel = String($(this).val());
+    //     await persistRagSettings();
+    // });
 
-    $('#carrot_rag_cohere_model').val(ragState.cohereModel || 'embed-english-v3.0').on('change', async function() {
-        ragState.cohereModel = String($(this).val());
-        await persistRagSettings();
-    });
+    // $('#carrot_rag_cohere_model').val(ragState.cohereModel || 'embed-english-v3.0').on('change', async function() {
+    //     ragState.cohereModel = String($(this).val());
+    //     await persistRagSettings();
+    // });
 
-    $('#carrot_rag_google_model').val(ragState.googleModel || 'text-embedding-005').on('change', async function() {
-        ragState.googleModel = String($(this).val());
-        await persistRagSettings();
-    });
+    // $('#carrot_rag_google_model').val(ragState.googleModel || 'text-embedding-005').on('change', async function() {
+    //     ragState.googleModel = String($(this).val());
+    //     await persistRagSettings();
+    // });
 
-    $('#carrot_rag_togetherai_model').val(ragState.togetheraiModel || 'togethercomputer/m2-bert-80M-32k-retrieval').on('change', async function() {
-        ragState.togetheraiModel = String($(this).val());
-        await persistRagSettings();
-    });
+    // $('#carrot_rag_togetherai_model').val(ragState.togetheraiModel || 'togethercomputer/m2-bert-80M-32k-retrieval').on('change', async function() {
+    //     ragState.togetheraiModel = String($(this).val());
+    //     await persistRagSettings();
+    // });
 
-    $('#carrot_rag_ollama_model').val(ragState.ollamaModel || 'mxbai-embed-large').on('input', async function() {
-        ragState.ollamaModel = String($(this).val());
-        await persistRagSettings();
-    });
+    // $('#carrot_rag_ollama_model').val(ragState.ollamaModel || 'mxbai-embed-large').on('input', async function() {
+    //     ragState.ollamaModel = String($(this).val());
+    //     await persistRagSettings();
+    // });
 
-    $('#carrot_rag_ollama_keep').prop('checked', ragState.ollamaKeep || false).on('change', async function() {
-        ragState.ollamaKeep = Boolean($(this).prop('checked'));
-        await persistRagSettings();
-    });
+    // $('#carrot_rag_ollama_keep').prop('checked', ragState.ollamaKeep || false).on('change', async function() {
+    //     ragState.ollamaKeep = Boolean($(this).prop('checked'));
+    //     await persistRagSettings();
+    // });
 
-    $('#carrot_rag_vllm_model').val(ragState.vllmModel || '').on('input', async function() {
-        ragState.vllmModel = String($(this).val());
-        await persistRagSettings();
-    });
+    // $('#carrot_rag_vllm_model').val(ragState.vllmModel || '').on('input', async function() {
+    //     ragState.vllmModel = String($(this).val());
+    //     await persistRagSettings();
+    // });
 
-    $('#carrot_rag_webllm_model').val(ragState.webllmModel || '').on('input', async function() {
-        ragState.webllmModel = String($(this).val());
-        await persistRagSettings();
-    });
+    // $('#carrot_rag_webllm_model').val(ragState.webllmModel || '').on('input', async function() {
+    //     ragState.webllmModel = String($(this).val());
+    //     await persistRagSettings();
+    // });
 
-    // URL settings for sources that need them
-    $('#carrot_rag_use_alt_url').prop('checked', ragState.useAltUrl || false).on('change', async function() {
-        ragState.useAltUrl = Boolean($(this).prop('checked'));
-        await persistRagSettings();
-        $('#carrot_rag_alt_url_container').toggle(ragState.useAltUrl);
-    });
+    // // URL settings for sources that need them
+    // $('#carrot_rag_use_alt_url').prop('checked', ragState.useAltUrl || false).on('change', async function() {
+    //     ragState.useAltUrl = Boolean($(this).prop('checked'));
+    //     await persistRagSettings();
+    //     $('#carrot_rag_alt_url_container').toggle(ragState.useAltUrl);
+    // });
 
-    $('#carrot_rag_alt_url').val(ragState.altUrl || '').on('input', async function() {
-        ragState.altUrl = String($(this).val());
-        await persistRagSettings();
-    });
+    // $('#carrot_rag_alt_url').val(ragState.altUrl || '').on('input', async function() {
+    //     ragState.altUrl = String($(this).val());
+    //     await persistRagSettings();
+    // });
 
-    // Initialize URL container visibility
-    $('#carrot_rag_alt_url_container').toggle(ragState.useAltUrl || false);
+    // // Initialize URL container visibility
+    // $('#carrot_rag_alt_url_container').toggle(ragState.useAltUrl || false);
 
     // Toggle function for vectorization model settings
     function toggleRAGVectorSettings() {
-        const source = ragState.vectorSource || 'transformers';
+        return;
+        // const source = ragState.vectorSource || 'transformers';
 
-        // Hide all model containers
-        $('#carrot_rag_openai_model_container').hide();
-        $('#carrot_rag_cohere_model_container').hide();
-        $('#carrot_rag_google_model_container').hide();
-        $('#carrot_rag_togetherai_model_container').hide();
-        $('#carrot_rag_ollama_model_container').hide();
-        $('#carrot_rag_ollama_keep_container').hide();
-        $('#carrot_rag_vllm_model_container').hide();
-        $('#carrot_rag_webllm_model_container').hide();
-        $('#carrot_rag_llamacpp_info').hide();
-        $('#carrot_rag_nomicai_container').hide();
-        $('#carrot_rag_url_settings').hide();
+        // // Hide all model containers
+        // $('#carrot_rag_openai_model_container').hide();
+        // $('#carrot_rag_cohere_model_container').hide();
+        // $('#carrot_rag_google_model_container').hide();
+        // $('#carrot_rag_togetherai_model_container').hide();
+        // $('#carrot_rag_ollama_model_container').hide();
+        // $('#carrot_rag_ollama_keep_container').hide();
+        // $('#carrot_rag_vllm_model_container').hide();
+        // $('#carrot_rag_webllm_model_container').hide();
+        // $('#carrot_rag_llamacpp_info').hide();
+        // $('#carrot_rag_nomicai_container').hide();
+        // $('#carrot_rag_url_settings').hide();
 
-        // Sources that require URL settings
-        const urlRequiredSources = ['ollama', 'llamacpp', 'koboldcpp', 'vllm'];
-        const showUrlSettings = urlRequiredSources.includes(source);
+        // // Sources that require URL settings
+        // const urlRequiredSources = ['ollama', 'llamacpp', 'koboldcpp', 'vllm'];
+        // const showUrlSettings = urlRequiredSources.includes(source);
 
-        // Update URL hint text based on source
-        const urlHints = {
-            'ollama': 'Set the Ollama URL in the Text Completion API connection settings.',
-            'llamacpp': 'Set the llama.cpp URL in the Text Completion API connection settings.',
-            'koboldcpp': 'Set the KoboldCpp URL in the Text Completion API connection settings.',
-            'vllm': 'Set the vLLM URL in the Text Completion API connection settings.'
-        };
+        // // Update URL hint text based on source
+        // const urlHints = {
+        //     'ollama': 'Set the Ollama URL in the Text Completion API connection settings.',
+        //     'llamacpp': 'Set the llama.cpp URL in the Text Completion API connection settings.',
+        //     'koboldcpp': 'Set the KoboldCpp URL in the Text Completion API connection settings.',
+        //     'vllm': 'Set the vLLM URL in the Text Completion API connection settings.'
+        // };
 
-        if (showUrlSettings) {
-            $('#carrot_rag_url_settings').show();
-            $('#carrot_rag_url_hint_text').text(urlHints[source] || '');
-        }
+        // if (showUrlSettings) {
+        //     $('#carrot_rag_url_settings').show();
+        //     $('#carrot_rag_url_hint_text').text(urlHints[source] || '');
+        // }
 
-        // Show relevant model container based on source
-        switch (source) {
-            case 'openai':
-            case 'mistral':
-                $('#carrot_rag_openai_model_container').show();
-                break;
-            case 'cohere':
-                $('#carrot_rag_cohere_model_container').show();
-                break;
-            case 'palm':
-            case 'vertexai':
-                $('#carrot_rag_google_model_container').show();
-                break;
-            case 'togetherai':
-                $('#carrot_rag_togetherai_model_container').show();
-                break;
-            case 'ollama':
-                $('#carrot_rag_ollama_model_container').show();
-                $('#carrot_rag_ollama_keep_container').show();
-                break;
-            case 'vllm':
-                $('#carrot_rag_vllm_model_container').show();
-                break;
-            case 'webllm':
-                $('#carrot_rag_webllm_model_container').show();
-                break;
-            case 'llamacpp':
-                $('#carrot_rag_llamacpp_info').show();
-                break;
-            case 'nomicai':
-                $('#carrot_rag_nomicai_container').show();
-                break;
-            // transformers, koboldcpp, extras don't need model selection
-        }
+        // // Show relevant model container based on source
+        // switch (source) {
+        //     case 'openai':
+        //     case 'mistral':
+        //         $('#carrot_rag_openai_model_container').show();
+        //         break;
+        //     case 'cohere':
+        //         $('#carrot_rag_cohere_model_container').show();
+        //         break;
+        //     case 'palm':
+        //     case 'vertexai':
+        //         $('#carrot_rag_google_model_container').show();
+        //         break;
+        //     case 'togetherai':
+        //         $('#carrot_rag_togetherai_model_container').show();
+        //         break;
+        //     case 'ollama':
+        //         $('#carrot_rag_ollama_model_container').show();
+        //         $('#carrot_rag_ollama_keep_container').show();
+        //         break;
+        //     case 'vllm':
+        //         $('#carrot_rag_vllm_model_container').show();
+        //         break;
+        //     case 'webllm':
+        //         $('#carrot_rag_webllm_model_container').show();
+        //         break;
+        //     case 'llamacpp':
+        //         $('#carrot_rag_llamacpp_info').show();
+        //         break;
+        //     case 'nomicai':
+        //         $('#carrot_rag_nomicai_container').show();
+        //         break;
+        //     // transformers, koboldcpp, extras don't need model selection
+        // }
     }
 
     // Initialize vectorization settings visibility
@@ -7994,33 +8000,33 @@ function bindSettingsEvents() {
         const source = ragState.vectorSource || 'transformers';
         let model = null;
 
-        switch (source) {
-            case 'openai':
-            case 'mistral':
-                model = ragState.openaiModel;
-                break;
-            case 'cohere':
-                model = ragState.cohereModel;
-                break;
-            case 'palm':
-            case 'vertexai':
-                model = ragState.googleModel;
-                break;
-            case 'togetherai':
-                model = ragState.togetheraiModel;
-                break;
-            case 'ollama':
-                model = ragState.ollamaModel;
-                break;
-            case 'vllm':
-                model = ragState.vllmModel;
-                break;
-            case 'webllm':
-                model = ragState.webllmModel;
-                break;
-        }
+        // switch (source) {
+        //     case 'openai':
+        //     case 'mistral':
+        //         model = ragState.openaiModel;
+        //         break;
+        //     case 'cohere':
+        //         model = ragState.cohereModel;
+        //         break;
+        //     case 'palm':
+        //     case 'vertexai':
+        //         model = ragState.googleModel;
+        //         break;
+        //     case 'togetherai':
+        //         model = ragState.togetheraiModel;
+        //         break;
+        //     case 'ollama':
+        //         model = ragState.ollamaModel;
+        //         break;
+        //     case 'vllm':
+        //         model = ragState.vllmModel;
+        //         break;
+        //     case 'webllm':
+        //         model = ragState.webllmModel;
+        //         break;
+        // }
 
-        return { source, model };
+        return { source, model: extension_settings.vector?[`${source}_model`] };
     }
 
     async function checkProviderChange() {
@@ -8075,13 +8081,13 @@ function bindSettingsEvents() {
         await checkProviderChange();
     })();
 
-    // Re-check when vector source or model changes
-    $('#carrot_rag_vector_source').on('change', () => {
-        setTimeout(async () => await checkProviderChange(), 100);
-    });
+    // // Re-check when vector source or model changes
+    // $('#carrot_rag_vector_source').on('change', () => {
+    //     setTimeout(async () => await checkProviderChange(), 100);
+    // });
 
-    $('#carrot_rag_openai_model, #carrot_rag_cohere_model, #carrot_rag_google_model, #carrot_rag_togetherai_model').on('change', async () => await checkProviderChange());
-    $('#carrot_rag_ollama_model, #carrot_rag_vllm_model, #carrot_rag_webllm_model').on('input', async () => await checkProviderChange());
+    // $('#carrot_rag_openai_model, #carrot_rag_cohere_model, #carrot_rag_google_model, #carrot_rag_togetherai_model').on('change', async () => await checkProviderChange());
+    // $('#carrot_rag_ollama_model, #carrot_rag_vllm_model, #carrot_rag_webllm_model').on('input', async () => await checkProviderChange());
 
     // Re-vectorize button handler
     $('#carrot_rag_revectorize_btn').on('click', async function() {
